@@ -1,325 +1,355 @@
 /*
- * GPUComputeBloom.h - GPU kernel for bloom filter-based address matching
+ * GPUComputeBloom.h - Modified VanitySearch GPU kernel with Bloom Filter support
  *
- * This is a modified version of VanitySearch's GPUCompute.h that:
- * 1. Uses bloom filter instead of prefix matching
- * 2. Checks both compressed and uncompressed keys
- * 3. Uses batch-optimized memory access patterns
+ * This replaces the prefix lookup table with a bloom filter check.
+ * The bloom filter is stored in GPU global memory (~200MB).
  *
- * Key optimizations:
- * - Bloom filter in global memory with L2 cache hints
- * - Coalesced hash160 computation
- * - Warp-level bloom filter checking
- * - Reduced memory traffic with early exit
+ * Integration: Include this instead of GPUCompute.h and define USE_BLOOM_FILTER
  */
 
 #ifndef GPU_COMPUTE_BLOOM_H
 #define GPU_COMPUTE_BLOOM_H
 
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include "GPUBloom.h"
-#include "../hash/sha256.h"
-#include "../hash/ripemd160.h"
-
 // ============================================================================
-// CONFIGURATION
+// BLOOM FILTER CONFIGURATION
 // ============================================================================
 
-#define GRP_SIZE 1024
-#define STEP_SIZE 1024
-#define HSIZE (GRP_SIZE / 2 - 1)
+#define BLOOM_MAX_HASHES 24
 
-// Item size in output buffer (8 uint32_t per match)
-#define ITEM_SIZE32 8
-
-// ============================================================================
-// BLOOM FILTER GLOBAL MEMORY
-// ============================================================================
-
-// These are set by the host before kernel launch
-__device__ __constant__ uint64_t d_bloomBits;
-__device__ __constant__ uint32_t d_bloomHashes;
-__device__ __constant__ uint32_t d_bloomSeeds[24];
-
-// Bloom filter data pointer (in global memory)
-__device__ uint8_t* d_bloomFilter;
+// Bloom filter data in global memory (set by host)
+__device__ uint8_t* d_bloomData;
+__device__ uint64_t d_bloomBits;
+__device__ uint32_t d_bloomHashes;
+__device__ uint32_t d_bloomSeeds[BLOOM_MAX_HASHES];
 
 // ============================================================================
-// HASH160 COMPUTATION (SHA256 + RIPEMD160)
+// MURMUR3 HASH (GPU VERSION - matches Python builder)
 // ============================================================================
 
-// Compute hash160 of a public key
-__device__ void ComputeHash160(
-    uint64_t* px,      // Public key X (4 x uint64_t)
-    uint64_t* py,      // Public key Y (4 x uint64_t)
-    bool compressed,
-    uint32_t* hash160  // Output: 5 x uint32_t = 20 bytes
-) {
-    uint8_t pubKey[65];
-    uint8_t sha[32];
+__device__ __forceinline__ uint32_t rotl32_bloom(uint32_t x, int8_t r) {
+    return (x << r) | (x >> (32 - r));
+}
 
-    if (compressed) {
-        // Compressed: 0x02/0x03 + X (33 bytes)
-        pubKey[0] = (py[0] & 1) ? 0x03 : 0x02;
-        for (int i = 0; i < 4; i++) {
-            uint64_t v = px[3 - i];
-            pubKey[1 + i * 8 + 0] = (v >> 56) & 0xFF;
-            pubKey[1 + i * 8 + 1] = (v >> 48) & 0xFF;
-            pubKey[1 + i * 8 + 2] = (v >> 40) & 0xFF;
-            pubKey[1 + i * 8 + 3] = (v >> 32) & 0xFF;
-            pubKey[1 + i * 8 + 4] = (v >> 24) & 0xFF;
-            pubKey[1 + i * 8 + 5] = (v >> 16) & 0xFF;
-            pubKey[1 + i * 8 + 6] = (v >> 8) & 0xFF;
-            pubKey[1 + i * 8 + 7] = v & 0xFF;
-        }
-        _SHA256(pubKey, 33, sha);
-    } else {
-        // Uncompressed: 0x04 + X + Y (65 bytes)
-        pubKey[0] = 0x04;
-        for (int i = 0; i < 4; i++) {
-            uint64_t vx = px[3 - i];
-            uint64_t vy = py[3 - i];
-            pubKey[1 + i * 8 + 0] = (vx >> 56) & 0xFF;
-            pubKey[1 + i * 8 + 1] = (vx >> 48) & 0xFF;
-            pubKey[1 + i * 8 + 2] = (vx >> 40) & 0xFF;
-            pubKey[1 + i * 8 + 3] = (vx >> 32) & 0xFF;
-            pubKey[1 + i * 8 + 4] = (vx >> 24) & 0xFF;
-            pubKey[1 + i * 8 + 5] = (vx >> 16) & 0xFF;
-            pubKey[1 + i * 8 + 6] = (vx >> 8) & 0xFF;
-            pubKey[1 + i * 8 + 7] = vx & 0xFF;
-            pubKey[33 + i * 8 + 0] = (vy >> 56) & 0xFF;
-            pubKey[33 + i * 8 + 1] = (vy >> 48) & 0xFF;
-            pubKey[33 + i * 8 + 2] = (vy >> 40) & 0xFF;
-            pubKey[33 + i * 8 + 3] = (vy >> 32) & 0xFF;
-            pubKey[33 + i * 8 + 4] = (vy >> 24) & 0xFF;
-            pubKey[33 + i * 8 + 5] = (vy >> 16) & 0xFF;
-            pubKey[33 + i * 8 + 6] = (vy >> 8) & 0xFF;
-            pubKey[33 + i * 8 + 7] = vy & 0xFF;
-        }
-        _SHA256(pubKey, 65, sha);
+__device__ __forceinline__ uint32_t murmur3_32(const uint8_t* key, int len, uint32_t seed) {
+    const uint32_t c1 = 0xcc9e2d51;
+    const uint32_t c2 = 0x1b873593;
+
+    uint32_t h1 = seed;
+    const int nblocks = len / 4;
+
+    // Body
+    const uint32_t* blocks = (const uint32_t*)key;
+    for (int i = 0; i < nblocks; i++) {
+        uint32_t k1 = blocks[i];
+
+        k1 *= c1;
+        k1 = rotl32_bloom(k1, 15);
+        k1 *= c2;
+
+        h1 ^= k1;
+        h1 = rotl32_bloom(h1, 13);
+        h1 = h1 * 5 + 0xe6546b64;
     }
 
-    _RIPEMD160(sha, 32, (uint8_t*)hash160);
+    // Tail
+    const uint8_t* tail = key + nblocks * 4;
+    uint32_t k1 = 0;
+
+    switch (len & 3) {
+    case 3: k1 ^= tail[2] << 16;
+    case 2: k1 ^= tail[1] << 8;
+    case 1: k1 ^= tail[0];
+        k1 *= c1;
+        k1 = rotl32_bloom(k1, 15);
+        k1 *= c2;
+        h1 ^= k1;
+    }
+
+    // Finalization
+    h1 ^= len;
+    h1 ^= h1 >> 16;
+    h1 *= 0x85ebca6b;
+    h1 ^= h1 >> 13;
+    h1 *= 0xc2b2ae35;
+    h1 ^= h1 >> 16;
+
+    return h1;
 }
 
 // ============================================================================
-// CHECK POINT WITH BLOOM FILTER
+// BLOOM FILTER CHECK
 // ============================================================================
 
-__device__ __noinline__ void CheckHashBloom(
-    uint32_t* hash160,   // 5 x uint32_t
+__device__ __forceinline__ bool bloom_check(const uint8_t* hash160) {
+    // Early exit optimization: check first hash before loop
+    uint32_t h = murmur3_32(hash160, 20, d_bloomSeeds[0]);
+    uint64_t bitPos = h % d_bloomBits;
+    uint64_t bytePos = bitPos >> 3;
+    uint8_t bitMask = 1 << (bitPos & 7);
+
+    if (!(d_bloomData[bytePos] & bitMask)) {
+        return false;
+    }
+
+    // Check remaining hashes
+    for (uint32_t i = 1; i < d_bloomHashes; i++) {
+        h = murmur3_32(hash160, 20, d_bloomSeeds[i]);
+        bitPos = h % d_bloomBits;
+        bytePos = bitPos >> 3;
+        bitMask = 1 << (bitPos & 7);
+
+        if (!(d_bloomData[bytePos] & bitMask)) {
+            return false;
+        }
+    }
+
+    return true;  // Probably in set (needs CPU verification)
+}
+
+// ============================================================================
+// BLOOM FILTER CHECK POINT (replaces prefix CHECK_POINT)
+// ============================================================================
+
+__device__ __noinline__ void CheckPointBloom(
+    uint32_t* _h,
     int32_t incr,
     int32_t endo,
-    int32_t mode,        // 0=uncompressed, 1=compressed
+    int32_t mode,
     uint32_t maxFound,
     uint32_t* out
 ) {
     // Check bloom filter
-    if (bloom_check_single(
-            (uint8_t*)hash160,
-            d_bloomFilter,
-            d_bloomBits,
-            d_bloomSeeds,
-            d_bloomHashes)) {
+    if (bloom_check((uint8_t*)_h)) {
         // Potential match - add to output for CPU verification
         uint32_t tid = (blockIdx.x * blockDim.x) + threadIdx.x;
         uint32_t pos = atomicAdd(out, 1);
         if (pos < maxFound) {
             out[pos * ITEM_SIZE32 + 1] = tid;
             out[pos * ITEM_SIZE32 + 2] = (uint32_t)(incr << 16) | (uint32_t)(mode << 15) | (uint32_t)(endo);
-            out[pos * ITEM_SIZE32 + 3] = hash160[0];
-            out[pos * ITEM_SIZE32 + 4] = hash160[1];
-            out[pos * ITEM_SIZE32 + 5] = hash160[2];
-            out[pos * ITEM_SIZE32 + 6] = hash160[3];
-            out[pos * ITEM_SIZE32 + 7] = hash160[4];
+            out[pos * ITEM_SIZE32 + 3] = _h[0];
+            out[pos * ITEM_SIZE32 + 4] = _h[1];
+            out[pos * ITEM_SIZE32 + 5] = _h[2];
+            out[pos * ITEM_SIZE32 + 6] = _h[3];
+            out[pos * ITEM_SIZE32 + 7] = _h[4];
         }
     }
 }
 
-// ============================================================================
-// MODULAR ARITHMETIC (from VanitySearch GPUMath.h)
-// ============================================================================
-
-// Include the modular arithmetic functions
-// These are the same as VanitySearch
-#include "GPUMath.h"
-#include "GPUGroup.h"
+#define CHECK_BLOOM(h, incr, endo, mode) CheckPointBloom(h, incr, endo, mode, maxFound, out)
 
 // ============================================================================
-// MAIN KERNEL - BLOOM FILTER VERSION
+// HASH COMPUTATION WITH BLOOM CHECK (Compressed)
 // ============================================================================
 
-__global__ void bloom_search_kernel(
-    uint64_t* __restrict__ keys,     // Starting public keys (x, y for each thread)
-    uint32_t maxFound,
-    uint32_t* __restrict__ out,
-    bool searchCompressed,
-    bool searchUncompressed
-) {
-    int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
+__device__ __noinline__ void CheckHashCompBloom(uint64_t *px, uint8_t isOdd, int32_t incr,
+                                                 uint32_t maxFound, uint32_t *out) {
+    uint32_t h[5];
+    _GetHash160Comp(px, isOdd, (uint8_t *)h);
+    CHECK_BLOOM(h, incr, 0, 1);
 
-    // Load starting point for this thread
-    uint64_t sx[4], sy[4];
-    for (int i = 0; i < 4; i++) {
-        sx[i] = keys[tid * 8 + i];
-        sy[i] = keys[tid * 8 + 4 + i];
+    // Endomorphism #1
+    uint64_t pe1x[4];
+    ModMult(pe1x, px, _beta);
+    _GetHash160Comp(pe1x, isOdd, (uint8_t *)h);
+    CHECK_BLOOM(h, incr, 1, 1);
+
+    // Endomorphism #2
+    uint64_t pe2x[4];
+    ModMult(pe2x, px, _beta2);
+    _GetHash160Comp(pe2x, isOdd, (uint8_t *)h);
+    CHECK_BLOOM(h, incr, 2, 1);
+
+    // Symmetric points (negate Y)
+    isOdd = IsOdd(isOdd);
+    _GetHash160Comp(px, isOdd, (uint8_t *)h);
+    CHECK_BLOOM(h, -incr, 0, 1);
+
+    _GetHash160Comp(pe1x, isOdd, (uint8_t *)h);
+    CHECK_BLOOM(h, -incr, 1, 1);
+
+    _GetHash160Comp(pe2x, isOdd, (uint8_t *)h);
+    CHECK_BLOOM(h, -incr, 2, 1);
+}
+
+// ============================================================================
+// HASH COMPUTATION WITH BLOOM CHECK (Uncompressed)
+// ============================================================================
+
+__device__ __noinline__ void CheckHashUncompBloom(uint64_t *px, uint64_t *py, int32_t incr,
+                                                   uint32_t maxFound, uint32_t *out) {
+    uint32_t h[5];
+    _GetHash160(px, py, (uint8_t *)h);
+    CHECK_BLOOM(h, incr, 0, 0);
+
+    // Endomorphism #1
+    uint64_t pe1x[4];
+    ModMult(pe1x, px, _beta);
+    _GetHash160(pe1x, py, (uint8_t *)h);
+    CHECK_BLOOM(h, incr, 1, 0);
+
+    // Endomorphism #2
+    uint64_t pe2x[4];
+    ModMult(pe2x, px, _beta2);
+    _GetHash160(pe2x, py, (uint8_t *)h);
+    CHECK_BLOOM(h, incr, 2, 0);
+
+    // Symmetric points (negate Y)
+    uint64_t pyn[4];
+    ModNeg256(pyn, py);
+
+    _GetHash160(px, pyn, (uint8_t *)h);
+    CHECK_BLOOM(h, -incr, 0, 0);
+
+    _GetHash160(pe1x, pyn, (uint8_t *)h);
+    CHECK_BLOOM(h, -incr, 1, 0);
+
+    _GetHash160(pe2x, pyn, (uint8_t *)h);
+    CHECK_BLOOM(h, -incr, 2, 0);
+}
+
+// ============================================================================
+// MAIN CHECK FUNCTION DISPATCHER
+// ============================================================================
+
+__device__ __noinline__ void CheckHashBloom(uint32_t mode, uint64_t *px, uint64_t *py, int32_t incr,
+                                            uint32_t maxFound, uint32_t *out) {
+    switch (mode) {
+    case SEARCH_COMPRESSED:
+        CheckHashCompBloom(px, (uint8_t)(py[0] & 1), incr, maxFound, out);
+        break;
+    case SEARCH_UNCOMPRESSED:
+        CheckHashUncompBloom(px, py, incr, maxFound, out);
+        break;
+    case SEARCH_BOTH:
+        CheckHashCompBloom(px, (uint8_t)(py[0] & 1), incr, maxFound, out);
+        CheckHashUncompBloom(px, py, incr, maxFound, out);
+        break;
     }
+}
 
-    // Delta-x for batch inversion
-    uint64_t dx[HSIZE + 2][4];
+#define CHECK_BLOOM_PREFIX(incr) CheckHashBloom(mode, px, py, j*GRP_SIZE + (incr), maxFound, out)
 
-    // Compute all delta-x values
-    for (int i = 0; i < HSIZE; i++) {
-        // dx[i] = Gx[i] - sx
-        _ModSub(dx[i], _Gx + i * 4, sx);
-    }
-    _ModSub(dx[HSIZE], _Gx + HSIZE * 4, sx);
-    _ModSub(dx[HSIZE + 1], _2Gx, sx);
+// ============================================================================
+// COMPUTE KEYS WITH BLOOM FILTER (replaces ComputeKeys)
+// ============================================================================
 
-    // Batch modular inversion
-    _ModInvGrouped(dx, HSIZE + 2);
+__device__ void ComputeKeysBloom(uint32_t mode, uint64_t *startx, uint64_t *starty,
+                                  uint32_t maxFound, uint32_t *out) {
 
-    // Temporary variables
-    uint64_t px[4], py[4];
-    uint64_t npx[4], npy[4];
-    uint64_t dy[4], _s[4], _p[4];
-    uint32_t hash160[5];
+    uint64_t dx[GRP_SIZE/2+1][4];
+    uint64_t px[4];
+    uint64_t py[4];
+    uint64_t pyn[4];
+    uint64_t sx[4];
+    uint64_t sy[4];
+    uint64_t dy[4];
+    uint64_t _s[4];
+    uint64_t _p2[4];
 
-    // Center point
-    if (searchCompressed) {
-        ComputeHash160(sx, sy, true, hash160);
-        CheckHashBloom(hash160, 0, 0, 1, maxFound, out);
-    }
-    if (searchUncompressed) {
-        ComputeHash160(sx, sy, false, hash160);
-        CheckHashBloom(hash160, 0, 0, 0, maxFound, out);
-    }
+    // Load starting key
+    __syncthreads();
+    Load256A(sx, startx);
+    Load256A(sy, starty);
+    Load256(px, sx);
+    Load256(py, sy);
 
-    // Compute points in both directions from center
-    for (int i = 0; i < HSIZE; i++) {
-        // P = startP + (i+1)*G
-        // dy = Gy[i] - sy
-        _ModSub(dy, _Gy + i * 4, sy);
+    for (uint32_t j = 0; j < STEP_SIZE / GRP_SIZE; j++) {
 
-        // s = dy * dx[i]^-1
-        _ModMult(s, dy, dx[i]);
+        // Fill group with delta x
+        uint32_t i;
+        for (i = 0; i < HSIZE; i++)
+            ModSub256(dx[i], Gx[i], sx);
+        ModSub256(dx[i], Gx[i], sx);   // For the first point
+        ModSub256(dx[i+1], _2Gnx, sx); // For the next center point
 
-        // p = s^2
-        _ModSquare(_p, _s);
+        // Compute modular inverse
+        _ModInvGrouped(dx);
 
-        // px = p - sx - Gx[i]
-        _ModSub(px, _p, sx);
-        _ModSub(px, px, _Gx + i * 4);
+        // Check starting point
+        CHECK_BLOOM_PREFIX(GRP_SIZE / 2);
 
-        // py = s * (Gx[i] - px) - Gy[i]
-        _ModSub(py, _Gx + i * 4, px);
-        _ModMult(py, _s, py);
-        _ModSub(py, py, _Gy + i * 4);
+        ModNeg256(pyn, py);
 
-        // N = startP - (i+1)*G (negate Gy)
-        // dy = -Gy[i] - sy
-        _ModNeg(dy, _Gy + i * 4);
-        _ModSub(dy, dy, sy);
+        for (i = 0; i < HSIZE; i++) {
+
+            // P = StartPoint + i*G
+            Load256(px, sx);
+            Load256(py, sy);
+            ModSub256(dy, Gy[i], py);
+
+            _ModMult(_s, dy, dx[i]);
+            _ModSqr(_p2, _s);
+
+            ModSub256(px, _p2, px);
+            ModSub256(px, Gx[i]);
+
+            ModSub256(py, Gx[i], px);
+            _ModMult(py, _s);
+            ModSub256(py, Gy[i]);
+
+            CHECK_BLOOM_PREFIX(GRP_SIZE / 2 + (i + 1));
+
+            // P = StartPoint - i*G
+            Load256(px, sx);
+            ModSub256(dy, pyn, Gy[i]);
+
+            _ModMult(_s, dy, dx[i]);
+            _ModSqr(_p2, _s);
+
+            ModSub256(px, _p2, px);
+            ModSub256(px, Gx[i]);
+
+            ModSub256(py, px, Gx[i]);
+            _ModMult(py, _s);
+            ModSub256(py, Gy[i], py);
+
+            CHECK_BLOOM_PREFIX(GRP_SIZE / 2 - (i + 1));
+        }
+
+        // First point (startP - (GRP_SIZE/2)*G)
+        Load256(px, sx);
+        Load256(py, sy);
+        ModNeg256(dy, Gy[i]);
+        ModSub256(dy, py);
 
         _ModMult(_s, dy, dx[i]);
-        _ModSquare(_p, _s);
+        _ModSqr(_p2, _s);
 
-        _ModSub(npx, _p, sx);
-        _ModSub(npx, npx, _Gx + i * 4);
+        ModSub256(px, _p2, px);
+        ModSub256(px, Gx[i]);
 
-        _ModSub(npy, _Gx + i * 4, npx);
-        _ModMult(npy, _s, npy);
-        _ModAdd(npy, npy, _Gy + i * 4);  // Note: add because we negated Gy
+        ModSub256(py, px, Gx[i]);
+        _ModMult(py, _s);
+        ModSub256(py, Gy[i], py);
 
-        // Check both points
-        if (searchCompressed) {
-            ComputeHash160(px, py, true, hash160);
-            CheckHashBloom(hash160, i + 1, 0, 1, maxFound, out);
+        CHECK_BLOOM_PREFIX(0);
 
-            ComputeHash160(npx, npy, true, hash160);
-            CheckHashBloom(hash160, -(i + 1), 0, 1, maxFound, out);
-        }
-        if (searchUncompressed) {
-            ComputeHash160(px, py, false, hash160);
-            CheckHashBloom(hash160, i + 1, 0, 0, maxFound, out);
+        i++;
 
-            ComputeHash160(npx, npy, false, hash160);
-            CheckHashBloom(hash160, -(i + 1), 0, 0, maxFound, out);
-        }
+        // Next start point (startP + GRP_SIZE*G)
+        Load256(px, sx);
+        Load256(py, sy);
+        ModSub256(dy, _2Gny, py);
 
-        // GLV Endomorphism check (3x more addresses per point)
-        // TODO: Add endomorphism support if needed
+        _ModMult(_s, dy, dx[i]);
+        _ModSqr(_p2, _s);
+
+        ModSub256(px, _p2, px);
+        ModSub256(px, _2Gnx);
+
+        ModSub256(py, _2Gnx, px);
+        _ModMult(py, _s);
+        ModSub256(py, _2Gny);
+
+        // Update for next iteration
+        Load256(sx, px);
+        Load256(sy, py);
     }
 
-    // First point (startP - (GRP_SIZE/2)*G)
-    int i = HSIZE;
-    _ModNeg(dy, _Gy + i * 4);
-    _ModSub(dy, dy, sy);
-
-    _ModMult(_s, dy, dx[i]);
-    _ModSquare(_p, _s);
-
-    _ModSub(npx, _p, sx);
-    _ModSub(npx, npx, _Gx + i * 4);
-
-    _ModSub(npy, _Gx + i * 4, npx);
-    _ModMult(npy, _s, npy);
-    _ModAdd(npy, npy, _Gy + i * 4);
-
-    if (searchCompressed) {
-        ComputeHash160(npx, npy, true, hash160);
-        CheckHashBloom(hash160, -(HSIZE + 1), 0, 1, maxFound, out);
-    }
-    if (searchUncompressed) {
-        ComputeHash160(npx, npy, false, hash160);
-        CheckHashBloom(hash160, -(HSIZE + 1), 0, 0, maxFound, out);
-    }
-
-    // Update starting point for next iteration
-    // newStart = startP + GRP_SIZE*G = startP + 2*(GRP_SIZE/2)*G
-    i = HSIZE + 1;
-    _ModSub(dy, _2Gy, sy);
-    _ModMult(_s, dy, dx[i]);
-    _ModSquare(_p, _s);
-
-    _ModSub(px, _p, sx);
-    _ModSub(px, px, _2Gx);
-
-    _ModSub(py, _2Gx, px);
-    _ModMult(py, _s, py);
-    _ModSub(py, py, _2Gy);
-
-    // Store updated starting point
-    for (int j = 0; j < 4; j++) {
-        keys[tid * 8 + j] = px[j];
-        keys[tid * 8 + 4 + j] = py[j];
-    }
-}
-
-// ============================================================================
-// KERNEL LAUNCHER
-// ============================================================================
-
-void LaunchBloomSearchKernel(
-    uint64_t* d_keys,
-    int numThreads,
-    int blockSize,
-    uint32_t maxFound,
-    uint32_t* d_output,
-    bool searchCompressed,
-    bool searchUncompressed,
-    cudaStream_t stream = 0
-) {
-    int numBlocks = (numThreads + blockSize - 1) / blockSize;
-
-    bloom_search_kernel<<<numBlocks, blockSize, 0, stream>>>(
-        d_keys,
-        maxFound,
-        d_output,
-        searchCompressed,
-        searchUncompressed
-    );
+    // Update starting point
+    __syncthreads();
+    Store256A(startx, px);
+    Store256A(starty, py);
 }
 
 #endif // GPU_COMPUTE_BLOOM_H
