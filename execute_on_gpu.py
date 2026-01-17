@@ -15,14 +15,50 @@ KERNEL_ID = "572a883c-5fbf-429a-b569-e3073acde909"
 CODE = """
 import subprocess
 import os
+import threading
+import time
 
-# Run verification check
 os.chdir("/workspace/Bot/vanitysearch_analysis")
-result = subprocess.run(["./VanitySearch", "-gpu", "-check"], capture_output=True, text=True, timeout=60)
-print("Verification Check:")
-print(result.stdout)
-if result.stderr:
-    print("STDERR:", result.stderr)
+
+print("=== Starting VanitySearch on all 4 GPUs ===")
+print("Target prefix: 1GUNPh")
+print(f"Start time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+print("")
+
+# Start VanitySearch as a background process
+proc = subprocess.Popen(
+    ["./VanitySearch", "-gpu", "-gpuId", "0,1,2,3", "-o", "found.txt", "-t", "0", "1GUNPh"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+    bufsize=1
+)
+
+# Read and print output in real-time for 5 minutes, then let it continue
+start_time = time.time()
+monitor_duration = 300  # 5 minutes of monitoring
+
+try:
+    while True:
+        line = proc.stdout.readline()
+        if line:
+            print(line, end='', flush=True)
+
+        # Check if we've monitored long enough
+        if time.time() - start_time > monitor_duration:
+            print("\\n=== Monitoring complete (5 min). Process continues in background ===")
+            print(f"Check found.txt for results: cat /workspace/Bot/vanitysearch_analysis/found.txt")
+            break
+
+        # Check if process ended
+        if proc.poll() is not None:
+            # Read remaining output
+            remaining = proc.stdout.read()
+            if remaining:
+                print(remaining)
+            break
+except KeyboardInterrupt:
+    print("\\nMonitoring interrupted")
 """
 
 def execute_code():
