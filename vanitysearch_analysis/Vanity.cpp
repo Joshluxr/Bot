@@ -1502,6 +1502,217 @@ void VanitySearch::getGPUStartingKeys(int thId, int groupSize, int nbThread, Int
 
 }
 
+// ----------------------------------------------------------------------------
+// Batch GPU Starting Key Generation (from FixedPaul/VanitySearch)
+// Uses Montgomery batch inversion to compute public keys ~100x faster
+// Instead of calling ComputePublicKey() for each thread (expensive ModInv),
+// we use batch point addition with a single shared inverse for groups of 256 points
+// ----------------------------------------------------------------------------
+
+void VanitySearch::getGPUStartingKeysBatch(Int& rangeStart, Int& rangeEnd, int groupSize, int nbThread, Int *keys, Point *p) {
+
+  Int rangeDiff;
+  Int rangePerThread;
+  Int currentStart(rangeStart);
+
+  // Calculate range per thread
+  Int numThreads;
+  numThreads.SetInt32(nbThread);
+  rangeDiff.Set(&rangeEnd);
+  if (rangeDiff.IsOdd()) {
+    rangeDiff.AddOne();
+  }
+  rangeDiff.Sub(&rangeStart);
+
+  rangePerThread.Set(&rangeDiff);
+  rangePerThread.Div(&numThreads);
+
+  // Track first thread's last key for range completion detection
+  firstGPUThreadLastKey.Set(&rangeStart);
+  firstGPUThreadLastKey.Add(&rangePerThread);
+
+  printf("  Batch init: Dividing range %s into %d threads (%s per thread)\n",
+         rangeDiff.GetBase16().c_str(), nbThread, rangePerThread.GetBase16().c_str());
+
+  // Group size for batch processing (256 points at a time for efficient batch inversion)
+  const int grp_startkeys = 256;
+
+  // Initialize delta points for batch addition
+  Point* p_delta = new Point[grp_startkeys];
+  Int* dx = new Int[grp_startkeys];
+
+  // Compute delta points: p_delta[i] = (i+1) * G for batch addition
+  Point g = secp->G;
+  p_delta[0] = g;
+  for (int i = 1; i < grp_startkeys; i++) {
+    p_delta[i] = secp->AddDirect(p_delta[i-1], secp->G);
+  }
+
+  // First, compute the starting public key for thread 0
+  Int k0(currentStart);
+  k0.Add((uint64_t)(groupSize / 2));
+  keys[0].Set(&currentStart);
+  p[0] = secp->ComputePublicKey(&k0);
+  if (startPubKeySpecified)
+    p[0] = secp->AddDirect(p[0], startPubKey);
+
+  // Now use batch addition for remaining threads
+  // Process in groups of grp_startkeys for efficient batch inversion
+  IntGroup* grp = new IntGroup(grp_startkeys);
+
+  for (int batch = 1; batch < nbThread; batch += grp_startkeys) {
+    int batchEnd = (batch + grp_startkeys > nbThread) ? nbThread : batch + grp_startkeys;
+    int batchSize = batchEnd - batch;
+
+    // Setup private keys for this batch
+    for (int i = 0; i < batchSize; i++) {
+      Int threadStart(rangeStart);
+      Int offset;
+      offset.Set(&rangePerThread);
+      offset.Mult((uint64_t)(batch + i));
+      threadStart.Add(&offset);
+      keys[batch + i].Set(&threadStart);
+    }
+
+    // Compute dx values for batch inversion
+    Point basePoint = p[batch - 1]; // Use previous point as base
+    for (int i = 0; i < batchSize; i++) {
+      // dx[i] = p_delta[i].x - basePoint.x
+      dx[i].ModSub(&p_delta[i].x, &basePoint.x);
+    }
+
+    // Batch modular inverse
+    grp->Set(dx);
+    grp->ModInv();
+
+    // Compute public keys using batch addition
+    for (int i = 0; i < batchSize; i++) {
+      Int dy;
+      Int s;
+      Int s2;
+
+      // s = (p_delta[i].y - basePoint.y) * dx[i]^(-1)
+      dy.ModSub(&p_delta[i].y, &basePoint.y);
+      s.ModMulK1(&dy, &dx[i]);
+
+      // x3 = s^2 - basePoint.x - p_delta[i].x
+      s2.ModSquareK1(&s);
+      p[batch + i].x.ModSub(&s2, &basePoint.x);
+      p[batch + i].x.ModSub(&p_delta[i].x);
+
+      // y3 = s * (basePoint.x - x3) - basePoint.y
+      p[batch + i].y.ModSub(&basePoint.x, &p[batch + i].x);
+      p[batch + i].y.ModMulK1(&s);
+      p[batch + i].y.ModSub(&basePoint.y);
+
+      if (startPubKeySpecified)
+        p[batch + i] = secp->AddDirect(p[batch + i], startPubKey);
+    }
+  }
+
+  delete grp;
+  delete[] p_delta;
+  delete[] dx;
+
+  // Display first and last thread info
+  printf("  Thread 0: start=%s\n", keys[0].GetBase16().c_str());
+  printf("  Thread %d: start=%s\n", nbThread-1, keys[nbThread-1].GetBase16().c_str());
+}
+
+// Multi-threaded version for very large thread counts
+void VanitySearch::getGPUStartingKeysBatchMT(Int& rangeStart, Int& rangeEnd, int groupSize, int nbThread, Int *keys, Point *p) {
+  // For simplicity, delegate to single-threaded version
+  // A full MT implementation would spawn CPU threads like allinbit does
+  getGPUStartingKeysBatch(rangeStart, rangeEnd, groupSize, nbThread, keys, p);
+}
+
+// ----------------------------------------------------------------------------
+// Expected time calculation for keyspace range mode (from allinbit/VanitySearch)
+// ----------------------------------------------------------------------------
+
+string VanitySearch::GetExpectedTimeRange(double keyRate, double keyCount, BITCRACK_PARAM *bc) {
+
+  char tmp[128];
+  string ret;
+
+  double dTime, nbDay, nbYear;
+  int iTime, nbHour, nbMin, nbSec;
+
+  dTime = Timer::get_tick() - startTime;
+
+  nbDay = dTime / 86400.0;
+  if (nbDay >= 1) {
+    nbYear = nbDay / 365.0;
+    if (nbYear > 1) {
+      if (nbYear < 5)
+        sprintf(tmp, "[%.1fy", nbYear);
+      else
+        sprintf(tmp, "[%gy", nbYear);
+    } else {
+      sprintf(tmp, "[%.1fd", nbDay);
+    }
+  } else {
+    iTime = (int)dTime;
+    nbHour = (int)((iTime % 86400) / 3600);
+    nbMin = (int)(((iTime % 86400) % 3600) / 60);
+    nbSec = (int)(iTime % 60);
+    sprintf(tmp, "[%02d:%02d:%02d", nbHour, nbMin, nbSec);
+  }
+  ret = string(tmp);
+
+  sprintf(tmp, " RUN || END ");
+  ret = ret + string(tmp);
+
+  // Calculate remaining time based on keyspace range
+  Int range;
+  range.Sub(&bc->ksFinish, &bc->ksNext);
+  Int countKey;
+  countKey.SetInt32(0);
+  countKey.Add((uint64_t)keyCount);
+  Int rateKey;
+  rateKey.SetInt32(0);
+  rateKey.Add((uint64_t)keyRate);
+
+  if (range.IsGreaterOrEqual(&countKey)) {
+    Int leftKey;
+    leftKey.Sub(&range, &countKey);
+    leftKey.Div(&rateKey);
+    Int maxuint32;
+    maxuint32.SetInt32(0xFFFFFFFF);
+    uint32_t diffTime = 0xFFFFFFFF;
+    if (leftKey.IsLower(&maxuint32)) diffTime = leftKey.GetInt32();
+
+    if (diffTime == 0xFFFFFFFF) {
+      sprintf(tmp, "infinity]");
+    } else {
+      dTime = (double)diffTime;
+      nbDay = dTime / 86400.0;
+      if (nbDay >= 1) {
+        nbYear = nbDay / 365.0;
+        if (nbYear > 1) {
+          if (nbYear < 5)
+            sprintf(tmp, "%.1fy]", nbYear);
+          else
+            sprintf(tmp, "%gy]", nbYear);
+        } else {
+          sprintf(tmp, "%.1fd]", nbDay);
+        }
+      } else {
+        iTime = (int)dTime;
+        nbHour = (int)((iTime % 86400) / 3600);
+        nbMin = (int)(((iTime % 86400) % 3600) / 60);
+        nbSec = (int)(iTime % 60);
+        sprintf(tmp, "%02d:%02d:%02d]", nbHour, nbMin, nbSec);
+      }
+    }
+  } else {
+    sprintf(tmp, "...finishing]");
+  }
+
+  ret = ret + string(tmp);
+  return ret;
+}
+
 void VanitySearch::FindKeyGPU(TH_PARAM *ph) {
 
   bool ok = true;

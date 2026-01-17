@@ -27,6 +27,14 @@
 
 static const char *searchModes[] = {"Compressed","Uncompressed","Compressed or Uncompressed"};
 
+// Configurable thread grouping (from Telariust/VanitySearch-bitcrack)
+// Options: 128 (original), 256 (modern GPUs), 512 (high-end GPUs)
+// Change this value and regenerate lookup tables for different configurations
+// Default: Use compile flag -DNB_THREAD_PER_GROUP=128|256|512 or set here
+#ifndef NB_THREAD_PER_GROUP
+#define NB_THREAD_PER_GROUP 128  // Default: original value for compatibility
+#endif
+
 // Number of key per thread (must be a multiple of GRP_SIZE) per kernel call
 #define STEP_SIZE 1024
 

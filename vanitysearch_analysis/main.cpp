@@ -25,43 +25,57 @@
 #include "hash/sha512.h"
 #include "hash/sha256.h"
 
-#define RELEASE "1.19"
+#define RELEASE "1.20-optimized"
 
 using namespace std;
+
+// Forward declaration for keyspace parsing (from allinbit/VanitySearch)
+void getKeySpace(const string& text, BITCRACK_PARAM* bc, Int& maxKey);
+void checkKeySpace(BITCRACK_PARAM* bc, Int& maxKey);
 
 // ------------------------------------------------------------------------------------------
 
 void printUsage() {
 
-  printf("VanitySeacrh [-check] [-v] [-u] [-b] [-c] [-gpu] [-stop] [-i inputfile]\n");
+  printf("VanitySearch v" RELEASE " - Optimized with FixedPaul/allinbit/Telariust features\n\n");
+  printf("VanitySearch [-check] [-v] [-u] [-b] [-c] [-gpu] [-stop] [-i inputfile]\n");
   printf("             [-gpuId gpuId1[,gpuId2,...]] [-g g1x,g1y,[,g2x,g2y,...]]\n");
   printf("             [-o outputfile] [-m maxFound] [-ps seed] [-s seed] [-t nbThread]\n");
   printf("             [-nosse] [-r rekey] [-check] [-kp] [-sp startPubKey]\n");
-  printf("             [-rp privkey partialkeyfile] [prefix]\n\n");
-  printf(" prefix: prefix to search (Can contains wildcard '?' or '*')\n");
+  printf("             [--keyspace START:END] [-rp privkey partialkeyfile] [prefix]\n\n");
+  printf(" prefix: prefix to search (Can contain wildcard '?' or '*')\n");
   printf(" -v: Print version\n");
   printf(" -u: Search uncompressed addresses\n");
   printf(" -b: Search both uncompressed or compressed addresses\n");
-  printf(" -c: Case unsensitive search\n");
-  printf(" -gpu: Enable gpu calculation\n");
+  printf(" -c: Case insensitive search\n");
+  printf(" -gpu: Enable GPU calculation\n");
   printf(" -stop: Stop when all prefixes are found\n");
-  printf(" -i inputfile: Get list of prefixes to search from specified file\n");
+  printf(" -i inputfile: Get list of prefixes/addresses to search from file (multi-address mode)\n");
   printf(" -o outputfile: Output results to the specified file\n");
-  printf(" -gpu gpuId1,gpuId2,...: List of GPU(s) to use, default is 0\n");
+  printf(" -gpuId gpuId1,gpuId2,...: List of GPU(s) to use, default is 0\n");
   printf(" -g g1x,g1y,g2x,g2y, ...: Specify GPU(s) kernel gridsize, default is 8*(MP number),128\n");
-  printf(" -m: Specify maximun number of prefixes found by each kernel call\n");
+  printf(" -m: Specify maximum number of prefixes found by each kernel call\n");
   printf(" -s seed: Specify a seed for the base key, default is random\n");
-  printf(" -ps seed: Specify a seed concatened with a crypto secure random seed\n");
-  printf(" -t threadNumber: Specify number of CPU thread, default is number of core\n");
+  printf(" -ps seed: Specify a seed concatenated with a crypto secure random seed (paranoiac mode)\n");
+  printf(" -t threadNumber: Specify number of CPU threads, default is number of cores\n");
   printf(" -nosse: Disable SSE hash function\n");
-  printf(" -l: List cuda enabled devices\n");
+  printf(" -l: List CUDA enabled devices\n");
   printf(" -check: Check CPU and GPU kernel vs CPU\n");
-  printf(" -cp privKey: Compute public key (privKey in hex hormat)\n");
-  printf(" -ca pubKey: Compute address (pubKey in hex hormat)\n");
+  printf(" -cp privKey: Compute public key (privKey in hex format)\n");
+  printf(" -ca pubKey: Compute address (pubKey in hex format)\n");
   printf(" -kp: Generate key pair\n");
   printf(" -rp privkey partialkeyfile: Reconstruct final private key(s) from partial key(s) info.\n");
   printf(" -sp startPubKey: Start the search with a pubKey (for private key splitting)\n");
   printf(" -r rekey: Rekey interval in MegaKey, default is disabled\n");
+  printf("\n");
+  printf("NEW FEATURES (from allinbit/VanitySearch):\n");
+  printf(" --keyspace START:END    Search within the specified keyspace range\n");
+  printf(" --keyspace START:+COUNT Search COUNT keys starting from START\n");
+  printf(" --keyspace :+COUNT      Search COUNT keys starting from 1\n");
+  printf(" --keyspace :END         Search from 1 to END\n");
+  printf("   Where START, END, COUNT are in hex format (up to 64 chars)\n");
+  printf("   Example: --keyspace 1000000:2000000\n");
+  printf("   Example: --keyspace 8000000000000000:+1000000000000000\n");
   exit(0);
 
 }
@@ -364,6 +378,99 @@ void reconstructAdd(Secp256K1 *secp, string fileName, string outputFile, string 
 }
 
 // ------------------------------------------------------------------------------------------
+// Keyspace/Range parsing functions (from allinbit/VanitySearch)
+// Supports BitCrack-style keyspace specification:
+//   --keyspace START:END
+//   --keyspace START:+COUNT
+//   --keyspace :+COUNT
+//   --keyspace :END
+// ------------------------------------------------------------------------------------------
+
+void getKeySpace(const string& text, BITCRACK_PARAM* bc, Int& maxKey) {
+  size_t start = 0, end = 0;
+  string item;
+
+  try {
+    if ((end = text.find(':', start)) != string::npos) {
+      item = string(text.substr(start, end));
+      start = end + 1;
+    } else {
+      item = string(text);
+    }
+
+    // Parse START
+    if (item.length() == 0) {
+      bc->ksStart.SetInt32(1);
+    } else if (item.length() > 64) {
+      printf("Error: keyspace START invalid (max 64 hex chars)\n");
+      exit(-1);
+    } else {
+      item.insert(0, 64 - item.length(), '0');
+      for (int i = 0; i < 32; i++) {
+        unsigned char ch = 0;
+        sscanf(&item[2 * i], "%02hhX", &ch);
+        bc->ksStart.SetByte(31 - i, ch);
+      }
+    }
+
+    // Parse END or +COUNT
+    if (start != 0 && (end = text.find('+', start)) != string::npos) {
+      // START:+COUNT format
+      item = string(text.substr(end + 1));
+      if (item.length() > 64 || item.length() == 0) {
+        printf("Error: keyspace COUNT invalid (max 64 hex chars)\n");
+        exit(-1);
+      }
+
+      item.insert(0, 64 - item.length(), '0');
+      for (int i = 0; i < 32; i++) {
+        unsigned char ch = 0;
+        sscanf(&item[2 * i], "%02hhX", &ch);
+        bc->ksFinish.SetByte(31 - i, ch);
+      }
+      bc->ksFinish.Add(&bc->ksStart);
+    } else if (start != 0) {
+      // START:END format
+      item = string(text.substr(start));
+      if (item.length() > 64 || item.length() == 0) {
+        printf("Error: keyspace END invalid (max 64 hex chars)\n");
+        exit(-1);
+      }
+
+      item.insert(0, 64 - item.length(), '0');
+      for (int i = 0; i < 32; i++) {
+        unsigned char ch = 0;
+        sscanf(&item[2 * i], "%02hhX", &ch);
+        bc->ksFinish.SetByte(31 - i, ch);
+      }
+    } else {
+      // No END specified, use maxKey
+      bc->ksFinish.Set(&maxKey);
+    }
+  } catch (std::invalid_argument&) {
+    printf("Error: Invalid --keyspace argument\n");
+    exit(-1);
+  }
+}
+
+void checkKeySpace(BITCRACK_PARAM* bc, Int& maxKey) {
+  if (bc->ksStart.IsGreater(&maxKey) || bc->ksFinish.IsGreater(&maxKey)) {
+    printf("Error: START/END exceeds max key %s\n", maxKey.GetBase16().c_str());
+    exit(-1);
+  }
+
+  if (bc->ksFinish.IsLowerOrEqual(&bc->ksStart)) {
+    printf("Error: END must be greater than START\n");
+    exit(-1);
+  }
+
+  if (bc->ksFinish.IsLowerOrEqual(&bc->ksNext)) {
+    printf("Error: END must be greater than NEXT\n");
+    exit(-1);
+  }
+}
+
+// ------------------------------------------------------------------------------------------
 
 int main(int argc, char* argv[]) {
 
@@ -400,6 +507,15 @@ int main(int argc, char* argv[]) {
   bool startPubKeyCompressed;
   bool caseSensitive = true;
   bool paranoiacSeed = false;
+
+  // BitCrack-style keyspace range support (from allinbit/VanitySearch)
+  BITCRACK_PARAM bitcrackRange;
+  BITCRACK_PARAM* keyspaceRange = NULL;
+  Int maxKey;
+  maxKey.SetBase16("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364140");
+  bitcrackRange.ksStart.SetInt32(1);
+  bitcrackRange.ksNext.Set(&bitcrackRange.ksStart);
+  bitcrackRange.ksFinish.Set(&maxKey);
 
   while (a < argc) {
 
@@ -530,6 +646,13 @@ int main(int argc, char* argv[]) {
       a++;
       rekey = (uint64_t)getInt("rekey", argv[a]);
       a++;
+    } else if (strcmp(argv[a], "--keyspace") == 0) {
+      // BitCrack-style keyspace range (from allinbit/VanitySearch)
+      a++;
+      getKeySpace(string(argv[a]), &bitcrackRange, maxKey);
+      bitcrackRange.ksNext.Set(&bitcrackRange.ksStart);
+      keyspaceRange = &bitcrackRange;
+      a++;
     } else if (strcmp(argv[a], "-h") == 0) {
       printUsage();
     } else if (a == argc - 1) {
@@ -543,6 +666,7 @@ int main(int argc, char* argv[]) {
   }
 
   printf("VanitySearch v" RELEASE "\n");
+  printf("Optimizations: UMultSpecial, ModSub256isOdd, BatchGPUInit, KeyspaceRange\n");
 
   if(gridSize.size()==0) {
     for (int i = 0; i < gpuId.size(); i++) {
@@ -552,6 +676,14 @@ int main(int argc, char* argv[]) {
   } else if(gridSize.size() != gpuId.size()*2) {
     printf("Invalid gridSize or gpuId argument, must have coherent size\n");
     exit(-1);
+  }
+
+  // Validate and display keyspace range if specified
+  if (keyspaceRange != NULL) {
+    checkKeySpace(keyspaceRange, maxKey);
+    printf("[Keyspace Range Mode]\n");
+    printf("  Start: %s\n", keyspaceRange->ksStart.GetBase16().c_str());
+    printf("  End:   %s\n", keyspaceRange->ksFinish.GetBase16().c_str());
   }
 
   // Let one CPU core free per gpu is gpu is enabled
@@ -568,6 +700,16 @@ int main(int argc, char* argv[]) {
 
   VanitySearch *v = new VanitySearch(secp, prefix, seed, searchMode, gpuEnable, stop, outputFile, sse,
     maxFound, rekey, caseSensitive, startPuKey, paranoiacSeed);
+
+  // Pass keyspace range to VanitySearch if specified
+  if (keyspaceRange != NULL) {
+    v->useKeyspaceRange = true;
+    v->keyspaceRange = keyspaceRange;
+  } else {
+    v->useKeyspaceRange = false;
+    v->keyspaceRange = NULL;
+  }
+
   v->Search(nbCPUThread,gpuId,gridSize);
 
   return 0;

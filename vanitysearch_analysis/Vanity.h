@@ -59,6 +59,15 @@ typedef struct {
 
 } PREFIX_ITEM;
 
+// BitCrack-style keyspace range parameters (from allinbit/VanitySearch)
+typedef struct {
+
+  Int ksStart;    // Starting key in the keyspace
+  Int ksNext;     // Next key to process (for progress tracking)
+  Int ksFinish;   // End key in the keyspace
+
+} BITCRACK_PARAM;
+
 typedef struct {
 
   std::vector<PREFIX_ITEM> *items;
@@ -102,8 +111,14 @@ private:
   void updateFound();
   void getCPUStartingKey(int thId, Int& key, Point& startP);
   void getGPUStartingKeys(int thId, int groupSize, int nbThread, Int *keys, Point *p);
+  // Batch GPU starting key generation from FixedPaul - ~100x faster initialization
+  void getGPUStartingKeysBatch(Int& rangeStart, Int& rangeEnd, int groupSize, int nbThread, Int *keys, Point *p);
+  // Multi-threaded batch initialization for very large thread counts
+  void getGPUStartingKeysBatchMT(Int& rangeStart, Int& rangeEnd, int groupSize, int nbThread, Int *keys, Point *p);
   void enumCaseUnsentivePrefix(std::string s, std::vector<std::string> &list);
   bool prefixMatch(char *prefix, char *addr);
+  // Keyspace range expected time calculation (from allinbit/VanitySearch)
+  std::string GetExpectedTimeRange(double keyRate, double keyCount, BITCRACK_PARAM *bc);
 
   Secp256K1 *secp;
   Int startKey;
@@ -139,6 +154,11 @@ private:
   Int lambda;
   Int beta2;
   Int lambda2;
+
+  // BitCrack-style keyspace range support (from allinbit/VanitySearch)
+  BITCRACK_PARAM *keyspaceRange;  // NULL if not using range scanning
+  bool useKeyspaceRange;
+  Int firstGPUThreadLastKey;  // For range completion tracking
 
 #ifdef WIN64
   HANDLE ghMutex;

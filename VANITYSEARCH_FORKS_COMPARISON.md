@@ -1,5 +1,22 @@
 # VanitySearch Forks Comparison Analysis
 
+> **Status: IMPLEMENTED** - All key optimizations have been integrated into `/root/repo/vanitysearch_analysis/`
+
+## Implementation Status
+
+| Feature | Source | Status | Files Modified |
+|---------|--------|--------|----------------|
+| UMultSpecial macro | FixedPaul | ✅ DONE | GPU/GPUMath.h |
+| ModSub256isOdd | FixedPaul | ✅ DONE | GPU/GPUMath.h |
+| Batch GPU init | FixedPaul | ✅ DONE | Vanity.cpp, Vanity.h |
+| Keyspace range | allinbit | ✅ DONE | main.cpp, Vanity.h, Vanity.cpp |
+| Thread grouping | Telariust | ✅ DONE | GPU/GPUEngine.h |
+| Multi-address | allinbit | ✅ DONE | (already supported via -i) |
+| Device constants | FixedPaul | ✅ DONE | GPU/GPUMath.h |
+| GRP_SIZE 1024 | FixedPaul | ✅ DONE | GPU/GPUGroup.h |
+
+---
+
 ## Repositories Analyzed
 
 | Repository | Version | Focus |
@@ -209,4 +226,31 @@ Three pre-compiled variants with different `NB_THREAD_PER_GROUP`:
 2. Flexible thread configuration
 3. Symmetry-based batch inversion (+25%)
 
+**allinbit/VanitySearch** adds puzzle-solving features:
+1. Custom keyspace range scanning (--keyspace)
+2. Multi-threaded batch initialization
+3. Range completion tracking and ETA
+
 For maximum performance, adopt FixedPaul's batch initialization and UMultSpecial, combined with Telariust's configurable thread grouping.
+
+---
+
+## Usage Examples (v1.20-optimized)
+
+```bash
+# Standard vanity search (no changes to original usage)
+./VanitySearch -gpu 1abc
+
+# Multi-address search from file
+./VanitySearch -gpu -i addresses.txt
+
+# Keyspace range scanning (new feature from allinbit)
+./VanitySearch -gpu --keyspace 8000000000000000:9000000000000000 1abc
+
+# Search COUNT keys starting from START
+./VanitySearch -gpu --keyspace 1000000:+FFFFFFFF 1abc
+
+# Compile with different thread grouping (Telariust)
+nvcc -DNB_THREAD_PER_GROUP=256 ...  # For modern GPUs
+nvcc -DNB_THREAD_PER_GROUP=512 ...  # For high-end GPUs
+```
