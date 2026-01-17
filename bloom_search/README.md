@@ -1,222 +1,113 @@
-# BloomSearch - Bitcoin Address Collision Finder
+# BloomSearch - GPU-Accelerated Bitcoin Address Matching
 
-A high-performance tool for finding Bitcoin addresses that exist in a known set of 55+ million addresses using bloom filters and deterministic work unit partitioning.
+A high-performance system for matching GPU-generated Bitcoin addresses against a bloom filter containing 55+ million funded addresses.
 
-## Features
+## Overview
 
-- **Bloom Filter Matching**: Instead of vanity prefix search, matches against a bloom filter of known addresses
-- **Deterministic Checkpoint/Resume**: Never checks the same key twice, even after restart
-- **Work Unit Partitioning**: Divides keyspace into independent work units for parallel/distributed search
-- **GPU Acceleration**: CUDA-optimized for high throughput
-- **Batch Processing**: Optimized for 23+ billion keys/second
+This system combines:
+- **VanitySearch GPU kernel** - Fast elliptic curve point multiplication on CUDA GPUs
+- **Bloom Filter** - Probabilistic data structure for O(1) address lookups
+- **Checkpoint/Resume** - Crash-resilient operation with progress persistence
 
-## How It Works
+## Components
 
-### 1. Bloom Filter (0.00001% false positive rate)
+### Bloom Filter
+- **File:** `btc_addresses.bloom` (191 MB)
+- **Addresses:** 55,291,075 Bitcoin addresses
+- **Size:** 1.6 billion bits
+- **Hash Functions:** 20 (MurmurHash3)
+- **False Positive Rate:** ~0% (tested with 1000 random hashes)
 
-Instead of checking each key against 55 million addresses one by one, we use a bloom filter:
+### Scripts
 
-```
-55M addresses → 200 MB bloom filter → GPU checks in ~17 memory accesses per key
-```
-
-At 23 billion keys/second with 0.00001% FP rate = ~2.3 false positives/second (easily verified on CPU)
-
-### 2. Deterministic Work Units
-
-The 256-bit keyspace is divided into "work units" of 2^40 keys (~1.1 trillion):
-
-```
-Work Unit 0: key[0x0000...0000] to key[0x0000...FFFFFFFFFF]
-Work Unit 1: key[seed_derived_1] to key[seed_derived_1 + 2^40]
-...
-```
-
-Each work unit:
-- Takes ~48 seconds at 23B keys/sec
-- Has a unique ID
-- Is marked complete in a bitmap file
-- Can be assigned to different machines for distributed search
-
-### 3. Checkpoint System
-
-Progress is saved:
-- Every 5 minutes automatically
-- On Ctrl+C interrupt
-- After each work unit completes
-
-To resume, just run the same command - it will skip completed work units.
+| Script | Description |
+|--------|-------------|
+| `build_bloom_fast.py` | Build bloom filter from address list |
+| `bloom_verifier.py` | Verify addresses against bloom filter |
+| `run_bloom_search.sh` | Run VanitySearch with bloom checking |
+| `continuous_search.sh` | Crash-resilient continuous runner |
+| `test_bloom.py` | Test bloom filter functionality |
 
 ## Quick Start
 
-### 1. Build the Bloom Filter (one-time, ~20 minutes)
-
+### 1. Build Bloom Filter (if needed)
 ```bash
-cd bloom_search
+# Download addresses (1.4GB compressed)
+wget -O btc_addresses.txt.gz 'http://addresses.loyce.club/Bitcoin_addresses_LATEST.txt.gz'
 
-# Download addresses and build bloom filter
-python3 build_bloom_filter.py --download -o targets.bloom
-
-# This creates:
-#   - targets.bloom (200 MB) - bloom filter for GPU
-#   - targets.sorted (1.1 GB) - sorted hash160s for CPU verification
+# Build bloom filter (~5 minutes)
+python3 build_bloom_fast.py
 ```
 
-### 2. Build BloomSearch
-
+### 2. Test Bloom Filter
 ```bash
-make
+python3 test_bloom.py
+
+# Or test specific address
+echo 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa | python3 bloom_verifier.py btc_addresses.bloom
 ```
 
-### 3. Run
-
+### 3. Run Continuous Search
 ```bash
-./BloomSearch \
-    -bloom targets.bloom \
-    -sorted targets.sorted \
-    -t 8 \
-    -seed "my_unique_seed" \
-    -o matches.txt
+./continuous_search.sh
 ```
 
-## Command Line Options
+## GPU Requirements
 
-| Option | Description |
-|--------|-------------|
-| `-bloom <file>` | Bloom filter file (required) |
-| `-sorted <file>` | Sorted hash160 file for verification (required) |
-| `-checkpoint <file>` | Checkpoint file (default: checkpoint.dat) |
-| `-o <file>` | Output file for matches |
-| `-t <threads>` | Number of CPU threads (default: 4) |
-| `-seed <string>` | Seed for deterministic work unit generation |
-| `-compressed` | Search compressed keys only |
-| `-uncompressed` | Search uncompressed keys only |
-| `-gpu` | Enable GPU acceleration |
-| `-gpuId <ids>` | GPU IDs to use (comma separated) |
-
-## Distributed Search
-
-Use different seeds on different machines to search different parts of the keyspace:
-
-```bash
-# Machine 1
-./BloomSearch -bloom targets.bloom -sorted targets.sorted -seed "machine1" -o found1.txt
-
-# Machine 2
-./BloomSearch -bloom targets.bloom -sorted targets.sorted -seed "machine2" -o found2.txt
-
-# Machine 3
-./BloomSearch -bloom targets.bloom -sorted targets.sorted -seed "machine3" -o found3.txt
-```
-
-Each machine will search a completely different part of the keyspace.
+- CUDA-capable GPU(s)
+- CUDA Toolkit 11.0+
+- Recommended: RTX 4080/4090 for best performance
 
 ## Performance
 
-| Configuration | Keys/Second |
-|--------------|-------------|
-| 8 CPU threads | ~1-2 million |
-| RTX 4080 SUPER (x1) | ~5-6 billion |
-| RTX 4080 SUPER (x4) | ~22-23 billion |
+On 4x RTX 4080 SUPER:
+- Key generation: ~2 billion keys/second
+- Bloom filter checks: Negligible overhead
+- Memory usage: ~200MB per GPU for bloom filter
 
-At 23 billion keys/second:
-- Work unit (2^40 keys) = 48 seconds
-- One day = ~2 × 10^15 keys checked
-- Full 256-bit keyspace = 10^62 years (obviously impossible!)
-
-This is for research/educational purposes - finding real collisions is astronomically unlikely.
-
-## File Formats
-
-### Bloom Filter (.bloom)
+## File Structure
 
 ```
-Header (256 bytes):
-  - uint64 numBits
-  - uint64 numBytes
-  - uint32 numHashes
-  - uint32 itemCount
-  - uint32[24] seeds
-  - padding
-
-Data:
-  - raw bit array
+/workspace/bloom_search/
+├── btc_addresses.bloom      # 191MB bloom filter
+├── btc_addresses.txt.gz     # 1.4GB compressed address list
+├── build_bloom_fast.py      # Bloom filter builder
+├── bloom_verifier.py        # Address verifier
+├── continuous_search.sh     # Crash-resilient runner
+├── run_bloom_search.sh      # Basic runner
+├── test_bloom.py            # Test script
+├── checkpoint.json          # Search progress checkpoint
+├── found_matches.txt        # Verified matches output
+└── GPU/
+    ├── GPUBloom.h           # CUDA bloom filter header
+    └── GPUBloomCompute.h    # GPU compute integration
 ```
 
-### Checkpoint (.dat)
+## Checkpointing
 
-```
-Header (256 bytes):
-  - uint32 version
-  - uint32 flags
-  - uint64 totalWorkUnits
-  - uint64 completedWorkUnits
-  - uint64 totalKeysChecked
-  - uint64 currentWorkUnitId
-  - uint64 keysInCurrentUnit
-  - uint8[32] seedHash
-  - uint64 createdTimestamp
-  - uint64 lastUpdateTimestamp
+The system saves progress to `checkpoint.json` every 10 seconds:
+```json
+{
+  keys_checked: 1234567890,
+  bloom_matches: 0,
+  start_time: 2024-01-17T22:00:00,
+  last_update: 2024-01-17T23:00:00
+}
 ```
 
-### Completed Bitmap (.completed)
+On restart, it continues from the last checkpoint.
 
-Binary bitmap where bit N = 1 if work unit N is completed.
+## Output
 
-## Building the Bloom Filter Manually
-
-```python
-from build_bloom_filter import BloomFilter, address_to_hash160
-
-# Create filter for custom address list
-bf = BloomFilter(num_bits=1_600_000_000, num_hashes=20)
-
-with open('my_addresses.txt') as f:
-    for addr in f:
-        h160 = address_to_hash160(addr.strip())
-        if h160:
-            bf.add(h160)
-
-bf.save('my_targets.bloom')
+Matches are saved to `found_matches.txt` with format:
 ```
-
-## Technical Details
-
-### Why Bloom Filters?
-
-Checking 55M addresses naively:
-- Binary search: O(log n) = 26 comparisons per key
-- Hash table: O(1) but needs 1.1 GB in GPU memory
-
-Bloom filter:
-- 200 MB fits easily in GPU global memory
-- 17 memory accesses per check
-- False positives verified on CPU (only ~2/second)
-
-### Why Work Units?
-
-Random key generation has a problem:
-- Birthday paradox means you'll check some keys twice
-- No way to resume without regenerating everything
-
-Work units solve this:
-- Deterministic: same seed always produces same sequence
-- Non-overlapping: each work unit covers unique keys
-- Resumable: just skip completed work units
-- Parallelizable: assign different work units to different machines
-
-### Memory Usage
-
-| Component | Size |
-|-----------|------|
-| Bloom filter (GPU) | 200 MB |
-| Sorted hash160s (CPU) | 1.1 GB |
-| Completed bitmap | Variable (~8 KB per 1M work units) |
+TIMESTAMP | ADDRESS | PRIVATE_KEY_WIF | PRIVATE_KEY_HEX
+```
 
 ## License
 
-MIT License - Use at your own risk.
+MIT License - For educational and research purposes only.
 
 ## Disclaimer
 
-This tool is for educational and research purposes only. The probability of finding a collision with a funded Bitcoin address is astronomically low (roughly 1 in 2^160). This is computationally infeasible even with unlimited resources.
+This tool is for educational purposes. The probability of finding a funded address randomly is astronomically low (~1 in 2^160).
