@@ -87,6 +87,11 @@ public:
   void FindKeyCPU(TH_PARAM *p);
   void FindKeyGPU(TH_PARAM *p);
 
+  // BitCrack-style keyspace range support (from allinbit/VanitySearch)
+  // Public for main.cpp to configure
+  BITCRACK_PARAM *keyspaceRange;  // NULL if not using range scanning
+  bool useKeyspaceRange;
+
 private:
 
   std::string GetHex(std::vector<unsigned char> &buffer);
@@ -155,9 +160,6 @@ private:
   Int beta2;
   Int lambda2;
 
-  // BitCrack-style keyspace range support (from allinbit/VanitySearch)
-  BITCRACK_PARAM *keyspaceRange;  // NULL if not using range scanning
-  bool useKeyspaceRange;
   Int firstGPUThreadLastKey;  // For range completion tracking
 
 #ifdef WIN64
