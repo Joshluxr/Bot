@@ -1,113 +1,139 @@
-# BloomSearch - GPU-Accelerated Bitcoin Address Matching
+# GPU Bloom Filter Bitcoin Address Search
 
-A high-performance system for matching GPU-generated Bitcoin addresses against a bloom filter containing 55+ million funded addresses.
+High-performance GPU-accelerated Bitcoin address search using bloom filters for efficient key space elimination.
 
-## Overview
+## Performance
 
-This system combines:
-- **VanitySearch GPU kernel** - Fast elliptic curve point multiplication on CUDA GPUs
-- **Bloom Filter** - Probabilistic data structure for O(1) address lookups
-- **Checkpoint/Resume** - Crash-resilient operation with progress persistence
+| Hardware | Speed |
+|----------|-------|
+| RTX 4080 SUPER (single) | ~2.4-2.5 GKey/s |
+| 8x RTX 4080 SUPER | ~19-20 GKey/s |
 
-## Components
+- 32-bit prefix filter eliminates 99.35% of keys before bloom filter check
+- Persistent state allows resume after restart or server migration
 
-### Bloom Filter
-- **File:** `btc_addresses.bloom` (191 MB)
-- **Addresses:** 55,291,075 Bitcoin addresses
-- **Size:** 1.6 billion bits
-- **Hash Functions:** 20 (MurmurHash3)
-- **False Positive Rate:** ~0% (tested with 1000 random hashes)
+## Architecture
 
-### Scripts
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Search Pipeline                          │
+├─────────────────────────────────────────────────────────────────┤
+│  Random EC Point → SHA256 → RIPEMD160 → Prefix Check → Bloom   │
+│                                              │              │    │
+│                                         99.35% rejected    │    │
+│                                                       ~0.1% FP  │
+│                                                            │    │
+│                                                    Verify against│
+│                                                    address DB   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Key Files
+
+### Source Code (`src/`)
+- `BloomSearch32Silent.cu` - Main GPU search kernel (silent mode)
+- `BloomSearch32.cu` - GPU search with bloom filter hit logging
+
+### Scripts (`scripts/`)
+- `gpu_only_search.sh` - Main search launcher for 8 GPUs
+- `checkpoint_manager.py` - Upload/download checkpoints to VPS
+- `auto_checkpoint_sync.sh` - Auto-sync states to VPS periodically
+
+### Data Files (generated separately)
+- `bloom_v2.bloom` - Bloom filter (~42MB)
+- `bloom_v2.prefix32` - 32-bit prefix bitmap (512MB)
+- `bloom_v2.seeds` - Bloom filter hash seeds
+
+## Checkpoint System
+
+The search saves state every 500 iterations (~33M keys per GPU). State files contain:
+- Total keys checked (8 bytes)
+- EC point states for all threads (4MB per GPU)
+
+### Sync to VPS (Prevents Progress Loss)
+
+```bash
+# On GPU server - auto-sync every 30 minutes
+./scripts/auto_checkpoint_sync.sh root@your-vps.com 30 &
+
+# Manual operations
+python3 scripts/checkpoint_manager.py upload -s root@your-vps.com -g 0
+python3 scripts/checkpoint_manager.py download -s root@your-vps.com -g 0
+python3 scripts/checkpoint_manager.py status -s root@your-vps.com
+```
+
+### State File Format
+
+```
+Offset  Size    Description
+0       8       Total keys checked (uint64 LE)
+8       4MB     Thread EC points (65536 × 8 × uint64)
+```
+
+## Quick Start
+
+### 1. Setup New GPU Server
+
+```bash
+# Install CUDA
+apt update && apt install -y nvidia-cuda-toolkit
+
+# Clone and setup
+git clone https://github.com/YourRepo/bloom_search.git
+cd bloom_search
+
+# Download filter files (host these somewhere)
+wget https://your-storage/bloom_v2.bloom -O /root/bloom_v2.bloom
+wget https://your-storage/bloom_v2.prefix32 -O /root/bloom_v2.prefix32
+wget https://your-storage/bloom_v2.seeds -O /root/bloom_v2.seeds
+
+# Compile
+cd src && nvcc -O3 -o /root/VanitySearch/BloomSearch32Silent BloomSearch32Silent.cu -arch=sm_89
+```
+
+### 2. Resume from Checkpoint (Optional)
+
+```bash
+python3 scripts/checkpoint_manager.py download -s root@your-vps.com -g 0
+# Repeat for GPUs 1-7
+```
+
+### 3. Start Search
+
+```bash
+nohup ./scripts/gpu_only_search.sh &
+nohup ./scripts/auto_checkpoint_sync.sh root@your-vps.com 30 &
+```
+
+### 4. Monitor
+
+```bash
+tail -f /root/gpu_search.log
+grep -oP '\d+\.\d+B keys' /root/gpu_search.log | tail -8
+```
+
+## Mathematical Reality
+
+Finding a match is essentially impossible:
+
+| Metric | Value |
+|--------|-------|
+| Funded addresses | ~50 million (2^26) |
+| Possible addresses | 2^160 (1.46 × 10^48) |
+| Search rate | 20 GKey/s |
+| Time to exhaustive search | 2.3 × 10^38 seconds |
+| Age of universe | 4.3 × 10^17 seconds |
+
+This demonstrates Bitcoin's cryptographic security.
+
+## Legacy Scripts
 
 | Script | Description |
 |--------|-------------|
 | `build_bloom_fast.py` | Build bloom filter from address list |
 | `bloom_verifier.py` | Verify addresses against bloom filter |
-| `run_bloom_search.sh` | Run VanitySearch with bloom checking |
-| `continuous_search.sh` | Crash-resilient continuous runner |
-| `test_bloom.py` | Test bloom filter functionality |
-
-## Quick Start
-
-### 1. Build Bloom Filter (if needed)
-```bash
-# Download addresses (1.4GB compressed)
-wget -O btc_addresses.txt.gz 'http://addresses.loyce.club/Bitcoin_addresses_LATEST.txt.gz'
-
-# Build bloom filter (~5 minutes)
-python3 build_bloom_fast.py
-```
-
-### 2. Test Bloom Filter
-```bash
-python3 test_bloom.py
-
-# Or test specific address
-echo 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa | python3 bloom_verifier.py btc_addresses.bloom
-```
-
-### 3. Run Continuous Search
-```bash
-./continuous_search.sh
-```
-
-## GPU Requirements
-
-- CUDA-capable GPU(s)
-- CUDA Toolkit 11.0+
-- Recommended: RTX 4080/4090 for best performance
-
-## Performance
-
-On 4x RTX 4080 SUPER:
-- Key generation: ~2 billion keys/second
-- Bloom filter checks: Negligible overhead
-- Memory usage: ~200MB per GPU for bloom filter
-
-## File Structure
-
-```
-/workspace/bloom_search/
-├── btc_addresses.bloom      # 191MB bloom filter
-├── btc_addresses.txt.gz     # 1.4GB compressed address list
-├── build_bloom_fast.py      # Bloom filter builder
-├── bloom_verifier.py        # Address verifier
-├── continuous_search.sh     # Crash-resilient runner
-├── run_bloom_search.sh      # Basic runner
-├── test_bloom.py            # Test script
-├── checkpoint.json          # Search progress checkpoint
-├── found_matches.txt        # Verified matches output
-└── GPU/
-    ├── GPUBloom.h           # CUDA bloom filter header
-    └── GPUBloomCompute.h    # GPU compute integration
-```
-
-## Checkpointing
-
-The system saves progress to `checkpoint.json` every 10 seconds:
-```json
-{
-  keys_checked: 1234567890,
-  bloom_matches: 0,
-  start_time: 2024-01-17T22:00:00,
-  last_update: 2024-01-17T23:00:00
-}
-```
-
-On restart, it continues from the last checkpoint.
-
-## Output
-
-Matches are saved to `found_matches.txt` with format:
-```
-TIMESTAMP | ADDRESS | PRIVATE_KEY_WIF | PRIVATE_KEY_HEX
-```
+| `continuous_search.sh` | Older crash-resilient runner |
 
 ## License
 
-MIT License - For educational and research purposes only.
-
-## Disclaimer
-
-This tool is for educational purposes. The probability of finding a funded address randomly is astronomically low (~1 in 2^160).
+For research and educational purposes only.
