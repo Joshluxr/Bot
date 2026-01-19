@@ -654,6 +654,349 @@ void secure_random(void* buf, size_t len) {
     if (f) { fread(buf, 1, len, f); fclose(f); }
 }
 
+// ============================================================================
+// SECP256K1 CPU SCALAR MULTIPLICATION (for proper key initialization)
+// ============================================================================
+
+// secp256k1 prime: P = 2^256 - 2^32 - 977
+static const uint64_t SECP_P[4] = {
+    0xFFFFFFFEFFFFFC2FULL, 0xFFFFFFFFFFFFFFFFULL,
+    0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL
+};
+
+// Generator point G
+static const uint64_t SECP_GX[4] = {
+    0x59F2815B16F81798ULL, 0x029BFCDB2DCE28D9ULL,
+    0x55A06295CE870B07ULL, 0x79BE667EF9DCBBACULL
+};
+static const uint64_t SECP_GY[4] = {
+    0x9C47D08FFB10D4B8ULL, 0xFD17B448A6855419ULL,
+    0x5DA4FBFC0E1108A8ULL, 0x483ADA7726A3C465ULL
+};
+
+// 256-bit comparison: returns 1 if a >= b
+static int cmp256(const uint64_t* a, const uint64_t* b) {
+    for (int i = 3; i >= 0; i--) {
+        if (a[i] > b[i]) return 1;
+        if (a[i] < b[i]) return -1;
+    }
+    return 0;
+}
+
+// 256-bit addition with carry
+static uint64_t add256(uint64_t* r, const uint64_t* a, const uint64_t* b) {
+    uint64_t c = 0;
+    for (int i = 0; i < 4; i++) {
+        __uint128_t sum = (__uint128_t)a[i] + b[i] + c;
+        r[i] = (uint64_t)sum;
+        c = (uint64_t)(sum >> 64);
+    }
+    return c;
+}
+
+// 256-bit subtraction with borrow
+static uint64_t sub256(uint64_t* r, const uint64_t* a, const uint64_t* b) {
+    uint64_t c = 0;
+    for (int i = 0; i < 4; i++) {
+        __uint128_t diff = (__uint128_t)a[i] - b[i] - c;
+        r[i] = (uint64_t)diff;
+        c = (diff >> 64) ? 1 : 0;
+    }
+    return c;
+}
+
+// Modular addition: r = (a + b) mod P
+static void mod_add(uint64_t* r, const uint64_t* a, const uint64_t* b) {
+    uint64_t c = add256(r, a, b);
+    if (c || cmp256(r, SECP_P) >= 0) {
+        sub256(r, r, SECP_P);
+    }
+}
+
+// Modular subtraction: r = (a - b) mod P
+static void mod_sub(uint64_t* r, const uint64_t* a, const uint64_t* b) {
+    uint64_t c = sub256(r, a, b);
+    if (c) {
+        add256(r, r, SECP_P);
+    }
+}
+
+// Modular multiplication using secp256k1's special form
+static void mod_mul(uint64_t* r, const uint64_t* a, const uint64_t* b) {
+    __uint128_t t[8] = {0};
+
+    // Full 256x256 multiplication to 512 bits
+    for (int i = 0; i < 4; i++) {
+        __uint128_t c = 0;
+        for (int j = 0; j < 4; j++) {
+            c += t[i + j] + (__uint128_t)a[i] * b[j];
+            t[i + j] = (uint64_t)c;
+            c >>= 64;
+        }
+        t[i + 4] = c;
+    }
+
+    // Reduce modulo P using secp256k1's special form: P = 2^256 - 0x1000003D1
+    // t mod P = t_low + t_high * 0x1000003D1 (mod P)
+    uint64_t high[4] = {(uint64_t)t[4], (uint64_t)t[5], (uint64_t)t[6], (uint64_t)t[7]};
+    uint64_t low[4] = {(uint64_t)t[0], (uint64_t)t[1], (uint64_t)t[2], (uint64_t)t[3]};
+
+    // Multiply high by 0x1000003D1
+    __uint128_t c = 0;
+    uint64_t hc[5];
+    for (int i = 0; i < 4; i++) {
+        c += (__uint128_t)high[i] * 0x1000003D1ULL;
+        hc[i] = (uint64_t)c;
+        c >>= 64;
+    }
+    hc[4] = (uint64_t)c;
+
+    // Add to low
+    c = 0;
+    for (int i = 0; i < 4; i++) {
+        c += (__uint128_t)low[i] + hc[i];
+        r[i] = (uint64_t)c;
+        c >>= 64;
+    }
+    c += hc[4];
+
+    // Final reduction if needed
+    while (c) {
+        uint64_t extra = (uint64_t)c;
+        c = (__uint128_t)extra * 0x1000003D1ULL;
+        for (int i = 0; i < 4 && c; i++) {
+            c += r[i];
+            r[i] = (uint64_t)c;
+            c >>= 64;
+        }
+    }
+
+    // Final comparison with P
+    if (cmp256(r, SECP_P) >= 0) {
+        sub256(r, r, SECP_P);
+    }
+}
+
+// Modular inversion using extended Euclidean algorithm (Fermat's little theorem)
+// a^(-1) = a^(P-2) mod P
+static void mod_inv(uint64_t* r, const uint64_t* a) {
+    // P - 2 in little-endian
+    uint64_t exp[4] = {
+        0xFFFFFFFEFFFFFC2DULL, 0xFFFFFFFFFFFFFFFFULL,
+        0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL
+    };
+
+    uint64_t base[4], result[4] = {1, 0, 0, 0};
+    memcpy(base, a, 32);
+
+    for (int i = 0; i < 256; i++) {
+        if ((exp[i / 64] >> (i % 64)) & 1) {
+            mod_mul(result, result, base);
+        }
+        mod_mul(base, base, base);
+    }
+
+    memcpy(r, result, 32);
+}
+
+// Point at infinity check (both coords zero)
+static int is_infinity(const uint64_t* x, const uint64_t* y) {
+    return (x[0] | x[1] | x[2] | x[3] | y[0] | y[1] | y[2] | y[3]) == 0;
+}
+
+// EC point addition: R = P + Q
+static void point_add(uint64_t* rx, uint64_t* ry,
+                      const uint64_t* px, const uint64_t* py,
+                      const uint64_t* qx, const uint64_t* qy) {
+    if (is_infinity(px, py)) {
+        memcpy(rx, qx, 32); memcpy(ry, qy, 32); return;
+    }
+    if (is_infinity(qx, qy)) {
+        memcpy(rx, px, 32); memcpy(ry, py, 32); return;
+    }
+
+    uint64_t s[4], dx[4], dy[4], s2[4], tmp[4];
+
+    // dx = qx - px
+    mod_sub(dx, qx, px);
+
+    // Check if same x (either same point or inverse)
+    if ((dx[0] | dx[1] | dx[2] | dx[3]) == 0) {
+        // dy = qy - py
+        mod_sub(dy, qy, py);
+        if ((dy[0] | dy[1] | dy[2] | dy[3]) == 0) {
+            // Same point - point doubling
+            // s = (3*px^2) / (2*py)
+            mod_mul(s, px, px);       // px^2
+            mod_add(tmp, s, s);       // 2*px^2
+            mod_add(s, tmp, s);       // 3*px^2
+            mod_add(dy, py, py);      // 2*py
+            mod_inv(tmp, dy);         // 1/(2*py)
+            mod_mul(s, s, tmp);       // s = 3*px^2 / (2*py)
+        } else {
+            // Point at infinity (P + (-P) = O)
+            memset(rx, 0, 32); memset(ry, 0, 32); return;
+        }
+    } else {
+        // dy = qy - py
+        mod_sub(dy, qy, py);
+        // s = dy / dx
+        mod_inv(tmp, dx);
+        mod_mul(s, dy, tmp);
+    }
+
+    // rx = s^2 - px - qx
+    mod_mul(s2, s, s);
+    mod_sub(rx, s2, px);
+    mod_sub(rx, rx, qx);
+
+    // ry = s * (px - rx) - py
+    mod_sub(tmp, px, rx);
+    mod_mul(ry, s, tmp);
+    mod_sub(ry, ry, py);
+}
+
+// EC point doubling: R = 2*P (optimized)
+static void point_double(uint64_t* rx, uint64_t* ry,
+                         const uint64_t* px, const uint64_t* py) {
+    if (is_infinity(px, py) || (py[0] | py[1] | py[2] | py[3]) == 0) {
+        memset(rx, 0, 32); memset(ry, 0, 32); return;
+    }
+
+    uint64_t s[4], s2[4], tmp[4], dy[4];
+
+    // s = (3*px^2) / (2*py)
+    mod_mul(s, px, px);       // px^2
+    mod_add(tmp, s, s);       // 2*px^2
+    mod_add(s, tmp, s);       // 3*px^2
+    mod_add(dy, py, py);      // 2*py
+    mod_inv(tmp, dy);         // 1/(2*py)
+    mod_mul(s, s, tmp);       // s = 3*px^2 / (2*py)
+
+    // rx = s^2 - 2*px
+    mod_mul(s2, s, s);
+    mod_sub(rx, s2, px);
+    mod_sub(rx, rx, px);
+
+    // ry = s * (px - rx) - py
+    mod_sub(tmp, px, rx);
+    mod_mul(ry, s, tmp);
+    mod_sub(ry, ry, py);
+}
+
+// Scalar multiplication: R = k * G using double-and-add
+static void scalar_mult_G(uint64_t* rx, uint64_t* ry, const uint64_t* k) {
+    uint64_t qx[4], qy[4];  // Current point
+    uint64_t tmpx[4], tmpy[4];
+
+    // Start with point at infinity
+    memset(rx, 0, 32);
+    memset(ry, 0, 32);
+
+    // Copy G to addend
+    memcpy(qx, SECP_GX, 32);
+    memcpy(qy, SECP_GY, 32);
+
+    // Double-and-add
+    for (int i = 0; i < 256; i++) {
+        if ((k[i / 64] >> (i % 64)) & 1) {
+            point_add(tmpx, tmpy, rx, ry, qx, qy);
+            memcpy(rx, tmpx, 32);
+            memcpy(ry, tmpy, 32);
+        }
+        point_double(tmpx, tmpy, qx, qy);
+        memcpy(qx, tmpx, 32);
+        memcpy(qy, tmpy, 32);
+    }
+}
+
+// Initialize h_keys with valid EC points from random private keys
+static void init_valid_keys(uint64_t* h_keys, int nbThread) {
+    printf("Generating %d valid EC starting points (this may take a moment)...\n", nbThread);
+
+    uint8_t privkey[32];
+
+    for (int t = 0; t < nbThread; t++) {
+        // Generate random 32-byte private key
+        secure_random(privkey, 32);
+
+        // Ensure it's in valid range (1 to N-1)
+        // For simplicity, just ensure it's non-zero
+        privkey[0] |= 1;  // Ensure not zero
+
+        // Convert to uint64_t array (little-endian on x86)
+        uint64_t k[4];
+        memcpy(k, privkey, 32);
+
+        // Compute P = k * G
+        uint64_t px[4], py[4];
+        scalar_mult_G(px, py, k);
+
+        // Store in h_keys array
+        // Layout: [x0, x1, x2, x3] for thread 0, then thread 1, etc.
+        // Then [y0, y1, y2, y3] for thread 0, etc.
+        // Actually the layout is interleaved for coalesced access:
+        // h_keys[t*8 + 0..3] = px, h_keys[t*8 + 4..7] = py? No...
+        // Looking at Load256A: keys + IDX, keys + IDX + blockDim.x, etc.
+        // So it's: px[0] at keys[t], px[1] at keys[t + nbThread], etc.
+
+        // The kernel uses:
+        // xPtr = (blockIdx.x * blockDim.x) * 8
+        // yPtr = xPtr + 4 * NB_THREAD_PER_GROUP
+        // Load256A(sx, startx) loads from startx[IDX], startx[IDX+blockDim.x], etc.
+
+        // So for thread t within block b:
+        // xPtr = b * 512 * 8 = b * 4096
+        // The t-th thread (t = b*512 + local_t) loads:
+        // px[0] from keys[b*4096 + local_t]
+        // px[1] from keys[b*4096 + local_t + 512]
+        // px[2] from keys[b*4096 + local_t + 1024]
+        // px[3] from keys[b*4096 + local_t + 1536]
+        // py[0] from keys[b*4096 + 2048 + local_t]
+        // etc.
+
+        // For simplicity, let's use a different layout and fix it:
+        // Store linearly: keys[t*8 + 0..3] = px, keys[t*8 + 4..7] = py
+        // This won't work with the current kernel...
+
+        // Actually, let's look at the allocation: nbThread * 64 bytes = nbThread * 8 uint64_t
+        // And the copy to GPU is the full buffer.
+        // The kernel accesses with Load256A which uses strided access.
+
+        // Let me compute the proper layout:
+        // For block b with 512 threads, xPtr = b * 512 * 8 = b * 4096
+        // Thread t loads px[i] from keys[xPtr + t + i*512] for i=0..3
+        // Thread t loads py[i] from keys[xPtr + 2048 + t + i*512] for i=0..3
+
+        // With nbThread = 128 * 512 = 65536 threads
+        // Total keys = 65536 * 8 = 524288 uint64_t
+
+        // For thread t (global), block b = t / 512, local = t % 512
+        // xPtr = b * 4096
+        // keys[xPtr + local + 0*512] = px[0] -> keys[b*4096 + local] = keys[(t/512)*4096 + t%512]
+
+        // Let's just compute the indices directly:
+        int block = t / 512;
+        int local = t % 512;
+        int xPtr = block * 4096;
+
+        h_keys[xPtr + local + 0 * 512] = px[0];
+        h_keys[xPtr + local + 1 * 512] = px[1];
+        h_keys[xPtr + local + 2 * 512] = px[2];
+        h_keys[xPtr + local + 3 * 512] = px[3];
+        h_keys[xPtr + 2048 + local + 0 * 512] = py[0];
+        h_keys[xPtr + 2048 + local + 1 * 512] = py[1];
+        h_keys[xPtr + 2048 + local + 2 * 512] = py[2];
+        h_keys[xPtr + 2048 + local + 3 * 512] = py[3];
+
+        if ((t + 1) % 10000 == 0 || t == nbThread - 1) {
+            printf("\r  Generated %d/%d keys...", t + 1, nbThread);
+            fflush(stdout);
+        }
+    }
+    printf("\n  Done! All starting points are valid EC curve points.\n");
+}
+
 void save_state(const char* f, uint64_t* k, int n, uint64_t t) {
     FILE* fp = fopen(f, "wb");
     if (fp) { fwrite(&t, 8, 1, fp); fwrite(k, 8, n*8, fp); fclose(fp); }
@@ -826,14 +1169,17 @@ int main(int argc, char** argv) {
         cudaMemcpy(d_seeds2, h_seeds2, bloom2Hashes * 4, cudaMemcpyHostToDevice);
     }
 
-    // Initialize keys
+    // Initialize keys - IMPORTANT: Must use valid EC points, not random bytes!
+    // Random bytes are almost NEVER valid points on the secp256k1 curve.
+    // We generate random private keys and compute P = k*G for each thread.
     uint64_t* h_keys = (uint64_t*)malloc(nbThread * 64);
     uint64_t resumedKeys = load_state(stateFile, h_keys, nbThread);
     if (resumedKeys > 0) {
         printf("Resumed from checkpoint: %.2fB keys checked\n", resumedKeys / 1e9);
     } else {
-        secure_random(h_keys, nbThread * 64);
-        printf("Starting fresh search\n");
+        // Generate valid EC starting points from random private keys
+        init_valid_keys(h_keys, nbThread);
+        printf("Starting fresh search with valid EC points\n");
     }
     cudaMemcpy(d_keys, h_keys, nbThread * 64, cudaMemcpyHostToDevice);
 
