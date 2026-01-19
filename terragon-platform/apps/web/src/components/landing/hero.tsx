@@ -1,87 +1,91 @@
 import Link from 'next/link';
 import { Button } from '@terragon/ui';
-import { ArrowRight, Play, Sparkles } from 'lucide-react';
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden py-20 md:py-32">
-      {/* Background gradient */}
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(45%_40%_at_50%_60%,hsl(var(--primary)/0.1),transparent)]" />
-
-      <div className="container">
-        <div className="mx-auto max-w-4xl text-center">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border bg-muted/50 px-4 py-1.5 text-sm">
-            <Sparkles className="h-4 w-4 text-primary" />
-            <span>AI-powered development automation</span>
-          </div>
-
-          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
-            Delegate coding tasks to{' '}
-            <span className="text-primary">AI agents</span>
+    <section className="py-16 md:py-24 lg:py-32">
+      <div className="container px-4 md:px-6">
+        <div className="mx-auto max-w-3xl text-center">
+          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl">
+            Delegate coding tasks to AI background agents
           </h1>
 
           <p className="mt-6 text-lg text-muted-foreground md:text-xl max-w-2xl mx-auto">
-            Describe what you need, and let AI agents work autonomously in isolated
-            cloud sandboxes. Get pull requests, not promises.
+            Describe what you need done. An AI agent works on your task in a cloud sandbox.
+            When it's done, review and merge the pull request.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Button size="lg" asChild>
-              <Link href="/login">
-                Get started for free
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
+              <Link href="/login">Get started for free</Link>
             </Button>
             <Button size="lg" variant="outline" asChild>
-              <Link href="#how-it-works">
-                <Play className="mr-2 h-4 w-4" />
-                See how it works
+              <Link href="https://docs.terragonlabs.com" target="_blank">
+                Learn more
               </Link>
             </Button>
           </div>
-
-          <p className="mt-4 text-sm text-muted-foreground">
-            No credit card required. 14-day free trial.
-          </p>
         </div>
 
-        {/* Demo preview */}
+        {/* Demo/Screenshot Preview */}
         <div className="mt-16 mx-auto max-w-5xl">
           <div className="relative rounded-xl border bg-card shadow-2xl overflow-hidden">
+            {/* Browser chrome */}
             <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-3">
               <div className="flex gap-1.5">
-                <div className="h-3 w-3 rounded-full bg-red-500" />
-                <div className="h-3 w-3 rounded-full bg-yellow-500" />
-                <div className="h-3 w-3 rounded-full bg-green-500" />
+                <div className="h-3 w-3 rounded-full bg-red-400" />
+                <div className="h-3 w-3 rounded-full bg-yellow-400" />
+                <div className="h-3 w-3 rounded-full bg-green-400" />
               </div>
-              <span className="text-sm text-muted-foreground">terragon.dev/dashboard</span>
+              <div className="flex-1 text-center">
+                <span className="text-xs text-muted-foreground">app.terragon.dev</span>
+              </div>
             </div>
-            <div className="p-6 bg-gradient-to-b from-background to-muted/20">
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="rounded-lg border bg-card p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-sm font-medium">Running</span>
+
+            {/* Mock dashboard content */}
+            <div className="p-6 space-y-4">
+              {/* Task input area */}
+              <div className="rounded-lg border bg-background p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                    <span className="text-primary text-sm font-medium">T</span>
                   </div>
-                  <p className="text-sm text-muted-foreground">Add user authentication flow</p>
-                  <div className="mt-3 h-2 rounded-full bg-primary/20 overflow-hidden">
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">New Task</div>
+                    <div className="text-xs text-muted-foreground">acme/frontend • main branch</div>
+                  </div>
+                </div>
+                <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  Add user authentication with GitHub OAuth. Include login/logout buttons in the header and protect the /dashboard route.
+                </div>
+              </div>
+
+              {/* Running tasks */}
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border bg-background p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                      <span className="text-sm font-medium">Running</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">Claude Code</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-2">Refactor API endpoints</p>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                     <div className="h-full w-3/4 bg-primary rounded-full" />
                   </div>
                 </div>
-                <div className="rounded-lg border bg-card p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="h-2 w-2 rounded-full bg-blue-500" />
-                    <span className="text-sm font-medium">Queued</span>
+
+                <div className="rounded-lg border bg-background p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-green-500" />
+                      <span className="text-sm font-medium">Completed</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">OpenAI</span>
                   </div>
-                  <p className="text-sm text-muted-foreground">Fix pagination bug in dashboard</p>
-                </div>
-                <div className="rounded-lg border bg-card p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="h-2 w-2 rounded-full bg-green-500" />
-                    <span className="text-sm font-medium">Completed</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Refactor API endpoints</p>
-                  <p className="mt-2 text-xs text-primary">PR #142 ready for review</p>
+                  <p className="text-sm text-muted-foreground mb-2">Fix pagination bug</p>
+                  <div className="text-xs text-primary font-medium">PR #142 ready</div>
                 </div>
               </div>
             </div>

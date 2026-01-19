@@ -1,90 +1,77 @@
 import Link from 'next/link';
-import { Button, Card, CardContent, CardHeader, CardTitle, CardDescription } from '@terragon/ui';
 import { Check } from 'lucide-react';
 
 const plans = [
   {
-    name: 'Free',
-    price: '$0',
-    description: 'For trying out Terragon',
+    name: 'Core',
+    price: '$25',
+    period: '/month',
+    description: 'For individual developers',
     features: [
-      '1 concurrent task',
-      '100 credits/month',
-      '5-minute sandbox timeout',
-      'GitHub integration',
-      'Community support',
+      '3 concurrent tasks',
+      'All AI agents included',
+      'GitHub & Slack integrations',
+      'API access',
+      'Email support',
     ],
     cta: 'Get Started',
     popular: false,
   },
   {
-    name: 'Core',
-    price: '$25',
-    description: 'For individual developers',
-    features: [
-      '3 concurrent tasks',
-      '1,000 credits/month',
-      '30-minute sandbox timeout',
-      'All integrations',
-      'API access',
-      'Email support',
-    ],
-    cta: 'Start Free Trial',
-    popular: true,
-  },
-  {
     name: 'Pro',
     price: '$50',
-    description: 'For power users and teams',
+    period: '/month',
+    description: 'For power users and small teams',
     features: [
       '10 concurrent tasks',
-      '5,000 credits/month',
-      '1-hour sandbox timeout',
-      'All integrations',
+      'All AI agents included',
       'Priority queue',
-      'Custom agents',
+      'All integrations',
+      'Custom agent configs',
       'Priority support',
     ],
-    cta: 'Start Free Trial',
-    popular: false,
+    cta: 'Get Started',
+    popular: true,
   },
   {
     name: 'Enterprise',
     price: 'Custom',
-    description: 'For organizations',
+    period: '',
+    description: 'For organizations with custom needs',
     features: [
       'Unlimited concurrent tasks',
-      'Unlimited credits',
-      'Custom sandbox timeout',
-      'SSO/SAML',
+      'SSO/SAML authentication',
+      'Self-hosted option',
       'Audit logs',
-      'Dedicated support',
       'Custom SLA',
+      'Dedicated support',
     ],
-    cta: 'Contact Us',
+    cta: 'Contact Sales',
     popular: false,
   },
 ];
 
 export function Pricing() {
   return (
-    <section id="pricing" className="py-20 md:py-32 bg-muted/30">
-      <div className="container">
-        <div className="mx-auto max-w-2xl text-center mb-16">
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            Simple, Transparent Pricing
+    <section id="pricing" className="py-16 md:py-24 border-t">
+      <div className="container px-4 md:px-6">
+        <div className="mx-auto max-w-2xl text-center mb-12">
+          <h2 className="text-3xl font-bold tracking-tight mb-4">
+            Pricing
           </h2>
-          <p className="mt-4 text-lg text-muted-foreground">
-            Start free, scale as you grow. All plans include a 14-day free trial.
+          <p className="text-lg text-muted-foreground">
+            Simple pricing for developers and teams
           </p>
         </div>
 
-        <div className="mx-auto max-w-6xl">
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mx-auto max-w-4xl">
+          <div className="grid gap-6 md:grid-cols-3">
             {plans.map((plan) => (
-              <Card
+              <div
                 key={plan.name}
-                className={`relative ${plan.popular ? 'border-primary shadow-lg' : ''}`}
+                className={`relative rounded-xl border bg-card p-6 shadow-sm ${
+                  plan.popular ? 'border-primary ring-1 ring-primary' : ''
+                }`}
               >
                 {plan.popular && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
@@ -93,34 +80,40 @@ export function Pricing() {
                     </span>
                   </div>
                 )}
-                <CardHeader>
-                  <CardTitle>{plan.name}</CardTitle>
-                  <CardDescription>{plan.description}</CardDescription>
+
+                <div className="mb-6">
+                  <h3 className="font-semibold text-lg">{plan.name}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {plan.description}
+                  </p>
                   <div className="mt-4">
                     <span className="text-4xl font-bold">{plan.price}</span>
-                    {plan.price !== 'Custom' && (
-                      <span className="text-muted-foreground">/month</span>
+                    {plan.period && (
+                      <span className="text-muted-foreground">{plan.period}</span>
                     )}
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3 mb-6">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-center gap-2">
-                        <Check className="h-4 w-4 text-primary flex-shrink-0" />
-                        <span className="text-sm">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Button
-                    className="w-full"
-                    variant={plan.popular ? 'default' : 'outline'}
-                    asChild
-                  >
-                    <Link href="/login">{plan.cta}</Link>
-                  </Button>
-                </CardContent>
-              </Card>
+                </div>
+
+                <ul className="space-y-3 mb-6">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2">
+                      <Check className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                      <span className="text-sm">{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Link
+                  href={plan.name === 'Enterprise' ? '/contact' : '/login'}
+                  className={`block w-full text-center py-2 px-4 rounded-lg font-medium transition-colors ${
+                    plan.popular
+                      ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                      : 'border hover:bg-muted'
+                  }`}
+                >
+                  {plan.cta}
+                </Link>
+              </div>
             ))}
           </div>
         </div>

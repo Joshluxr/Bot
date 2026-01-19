@@ -1,59 +1,83 @@
-import { MessageSquare, Cloud, GitPullRequest } from 'lucide-react';
-
-const steps = [
-  {
-    icon: MessageSquare,
-    title: 'Describe the Task',
-    description: 'Select your repository and describe what you need done. Be as detailed or as brief as you like.',
-  },
-  {
-    icon: Cloud,
-    title: 'Agent Works in the Cloud',
-    description: 'Your task runs in an isolated sandbox environment. The AI agent writes, tests, and iterates on the code.',
-  },
-  {
-    icon: GitPullRequest,
-    title: 'Review the Pull Request',
-    description: 'When complete, a pull request is created automatically. Review the changes and merge when ready.',
-  },
-];
-
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="py-20 md:py-32 bg-muted/30">
-      <div className="container">
-        <div className="mx-auto max-w-2xl text-center mb-16">
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+    <section id="how-it-works" className="py-16 md:py-24 border-t">
+      <div className="container px-4 md:px-6">
+        <div className="mx-auto max-w-2xl text-center mb-12">
+          <h2 className="text-3xl font-bold tracking-tight">
             How It Works
           </h2>
-          <p className="mt-4 text-lg text-muted-foreground">
-            Three simple steps to automate your development workflow
-          </p>
         </div>
 
-        <div className="mx-auto max-w-5xl">
+        <div className="mx-auto max-w-4xl">
           <div className="grid gap-8 md:grid-cols-3">
-            {steps.map((step, index) => (
-              <div key={step.title} className="relative">
-                {/* Connector line */}
-                {index < steps.length - 1 && (
-                  <div className="hidden md:block absolute top-12 left-[calc(50%+3rem)] w-[calc(100%-6rem)] h-0.5 bg-border" />
-                )}
-
-                <div className="flex flex-col items-center text-center">
-                  <div className="flex h-24 w-24 items-center justify-center rounded-full bg-primary/10 mb-6">
-                    <step.icon className="h-10 w-10 text-primary" />
-                  </div>
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                      {index + 1}
-                    </span>
-                    <h3 className="text-xl font-semibold">{step.title}</h3>
-                  </div>
-                  <p className="text-muted-foreground">{step.description}</p>
-                </div>
+            {/* Step 1 */}
+            <div className="text-center">
+              <div className="mb-4 mx-auto h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <svg
+                  className="h-8 w-8 text-primary"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                  />
+                </svg>
               </div>
-            ))}
+              <h3 className="text-lg font-semibold mb-2">Prompt</h3>
+              <p className="text-sm text-muted-foreground">
+                Describe your task
+              </p>
+            </div>
+
+            {/* Step 2 */}
+            <div className="text-center">
+              <div className="mb-4 mx-auto h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <svg
+                  className="h-8 w-8 text-primary"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Do something else</h3>
+              <p className="text-sm text-muted-foreground">
+                Agent works on your task
+              </p>
+            </div>
+
+            {/* Step 3 */}
+            <div className="text-center">
+              <div className="mb-4 mx-auto h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <svg
+                  className="h-8 w-8 text-primary"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Pull Request</h3>
+              <p className="text-sm text-muted-foreground">
+                Review & Merge
+              </p>
+            </div>
           </div>
         </div>
       </div>

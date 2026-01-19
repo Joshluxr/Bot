@@ -1,84 +1,55 @@
 'use client';
 
 import Link from 'next/link';
-import { useSession, signOut } from 'next-auth/react';
-import {
-  Button,
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@terragon/ui';
-import { ThemeToggle } from '@/components/theme-toggle';
-import { Leaf, Plus, Bell } from 'lucide-react';
+import { Leaf, Menu, Plus, Bell, User } from 'lucide-react';
 
-export function DashboardHeader() {
-  const { data: session } = useSession();
+interface DashboardHeaderProps {
+  onMenuClick?: () => void;
+  onNewTask?: () => void;
+}
 
+export function DashboardHeader({ onMenuClick, onNewTask }: DashboardHeaderProps) {
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center justify-between px-4 lg:px-6">
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <Leaf className="h-6 w-6 text-primary" />
-            <span className="text-lg font-bold hidden sm:inline">Terragon</span>
-          </Link>
-        </div>
+    <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex h-14 items-center px-4 md:px-6">
+        {/* Mobile Menu Button */}
+        <button
+          onClick={onMenuClick}
+          className="mr-4 p-2 -ml-2 rounded-lg hover:bg-muted lg:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
 
-        <div className="flex items-center gap-4">
-          <Button asChild>
-            <Link href="/dashboard/tasks/new">
-              <Plus className="mr-2 h-4 w-4" />
-              New Task
-            </Link>
-          </Button>
+        {/* Logo (mobile only) */}
+        <Link href="/" className="flex items-center gap-2 lg:hidden">
+          <Leaf className="h-5 w-5 text-primary" />
+          <span className="font-semibold">Terragon</span>
+        </Link>
 
-          <Button variant="ghost" size="icon">
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+          {/* New Task Button */}
+          <button
+            onClick={onNewTask}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium text-sm hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">New Task</span>
+          </button>
+
+          {/* Notifications */}
+          <button className="p-2 rounded-lg hover:bg-muted relative">
             <Bell className="h-5 w-5" />
-          </Button>
+            <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-primary rounded-full" />
+          </button>
 
-          <ThemeToggle />
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={session?.user?.image || ''} alt={session?.user?.name || ''} />
-                  <AvatarFallback>
-                    {session?.user?.name?.charAt(0) || 'U'}
-                  </AvatarFallback>
-                </Avatar>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56" align="end" forceMount>
-              <DropdownMenuLabel className="font-normal">
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">
-                    {session?.user?.name}
-                  </p>
-                  <p className="text-xs leading-none text-muted-foreground">
-                    {session?.user?.email}
-                  </p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard/settings">Settings</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/dashboard/billing">Billing</Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => signOut({ callbackUrl: '/' })}>
-                Log out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* User Menu */}
+          <button className="p-2 rounded-lg hover:bg-muted">
+            <User className="h-5 w-5" />
+          </button>
         </div>
       </div>
     </header>

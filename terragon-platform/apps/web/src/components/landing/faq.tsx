@@ -1,9 +1,7 @@
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@terragon/ui';
+'use client';
+
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 const faqs = [
   {
@@ -16,56 +14,60 @@ const faqs = [
   },
   {
     question: 'What AI models do you support?',
-    answer: 'We support Claude Code (Anthropic), GPT-4 (OpenAI), Gemini (Google), and custom configurations. You can use your own API keys or our managed service.',
-  },
-  {
-    question: 'How are credits calculated?',
-    answer: 'Credits are based on sandbox runtime (1 credit per minute) plus AI API usage. Most simple tasks use 5-20 credits. Complex tasks may use more.',
-  },
-  {
-    question: 'Can I use my own API keys?',
-    answer: 'Yes! On Pro and Enterprise plans, you can bring your own API keys for Claude, OpenAI, or other providers. This can reduce costs for high-volume usage.',
+    answer: 'We support Claude Code (Anthropic), OpenAI, Gemini (Google), Amp, OpenCode, and custom configurations. You can use your own API keys or our managed service.',
   },
   {
     question: 'What happens if a task fails?',
-    answer: "If a task fails, you'll see the error logs and can retry. Failed tasks don't count against your concurrent task limit. You only pay for successful sandbox time.",
+    answer: "If a task fails, you'll see the error logs and can retry. You can also pull the task to your local environment using the Terry CLI to debug and fix issues.",
+  },
+  {
+    question: 'Can I use my own API keys?',
+    answer: 'Yes! You can bring your own API keys for Claude, OpenAI, or other providers. This can reduce costs for high-volume usage.',
   },
   {
     question: 'Do you support monorepos?',
     answer: 'Yes! You can specify the working directory within your repository. The agent will work within that context.',
   },
-  {
-    question: 'Can I cancel the trial at any time?',
-    answer: 'Absolutely. You can cancel your trial or subscription at any time. No credit card is required to start.',
-  },
 ];
 
 export function FAQ() {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
   return (
-    <section className="py-20 md:py-32 bg-muted/30">
-      <div className="container">
-        <div className="mx-auto max-w-2xl text-center mb-16">
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            Frequently Asked Questions
+    <section className="py-16 md:py-24 border-t">
+      <div className="container px-4 md:px-6">
+        <div className="mx-auto max-w-2xl text-center mb-12">
+          <h2 className="text-3xl font-bold tracking-tight mb-4">
+            FAQ
           </h2>
-          <p className="mt-4 text-lg text-muted-foreground">
+          <p className="text-lg text-muted-foreground">
             Everything you need to know about Terragon
           </p>
         </div>
 
-        <div className="mx-auto max-w-3xl">
-          <Accordion type="single" collapsible className="w-full">
+        <div className="mx-auto max-w-2xl">
+          <div className="space-y-2">
             {faqs.map((faq, index) => (
-              <AccordionItem key={index} value={`item-${index}`}>
-                <AccordionTrigger className="text-left">
-                  {faq.question}
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground">
-                  {faq.answer}
-                </AccordionContent>
-              </AccordionItem>
+              <div key={index} className="rounded-lg border bg-card">
+                <button
+                  onClick={() => setOpenIndex(openIndex === index ? null : index)}
+                  className="w-full flex items-center justify-between p-4 text-left"
+                >
+                  <span className="font-medium">{faq.question}</span>
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${
+                      openIndex === index ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+                {openIndex === index && (
+                  <div className="px-4 pb-4 text-sm text-muted-foreground">
+                    {faq.answer}
+                  </div>
+                )}
+              </div>
             ))}
-          </Accordion>
+          </div>
         </div>
       </div>
     </section>

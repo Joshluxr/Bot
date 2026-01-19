@@ -1,66 +1,65 @@
-import Image from 'next/image';
-import { Card, CardContent } from '@terragon/ui';
+import { Bot } from 'lucide-react';
 
 const agents = [
   {
     name: 'Claude Code',
-    description: "Anthropic's Claude with deep coding capabilities",
-    icon: '/agents/claude.svg',
-    color: 'from-orange-500/20 to-orange-600/20',
+    description: "Anthropic's Claude - exceptional at understanding complex codebases",
+    color: 'bg-orange-500',
   },
   {
-    name: 'OpenAI GPT-4',
-    description: "OpenAI's most capable model for code generation",
-    icon: '/agents/openai.svg',
-    color: 'from-green-500/20 to-green-600/20',
+    name: 'OpenAI Codex',
+    description: "OpenAI's models optimized for code generation and debugging",
+    color: 'bg-emerald-500',
   },
   {
-    name: 'Google Gemini',
-    description: "Google's multimodal AI with coding expertise",
-    icon: '/agents/gemini.svg',
-    color: 'from-blue-500/20 to-blue-600/20',
+    name: 'Gemini',
+    description: "Google's AI with strong reasoning and multimodal capabilities",
+    color: 'bg-blue-500',
   },
   {
-    name: 'Custom Agent',
-    description: 'Bring your own agent configuration and API keys',
-    icon: '/agents/custom.svg',
-    color: 'from-purple-500/20 to-purple-600/20',
+    name: 'Amp',
+    description: "Sourcegraph's AI agent built for large-scale code changes",
+    color: 'bg-purple-500',
+  },
+  {
+    name: 'OpenCode',
+    description: "Open-source coding agent with customizable behavior",
+    color: 'bg-pink-500',
   },
 ];
 
 export function Agents() {
   return (
-    <section className="py-20 md:py-32">
-      <div className="container">
-        <div className="mx-auto max-w-2xl text-center mb-16">
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            Choose Your AI Agent
+    <section className="py-16 md:py-24 border-t">
+      <div className="container px-4 md:px-6">
+        <div className="mx-auto max-w-2xl text-center mb-12">
+          <div className="mb-6 mx-auto h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Bot className="h-6 w-6 text-primary" />
+          </div>
+          <h2 className="text-3xl font-bold tracking-tight mb-4">
+            AI Coding Agents
           </h2>
-          <p className="mt-4 text-lg text-muted-foreground">
-            Work with the best AI coding assistants. Use your own API keys or our managed service.
+          <p className="text-lg text-muted-foreground">
+            Choose from leading AI models. Each agent runs autonomously in isolated sandboxes
+            to plan, build, and test your code.
           </p>
         </div>
 
         <div className="mx-auto max-w-4xl">
-          <div className="grid gap-6 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {agents.map((agent) => (
-              <Card key={agent.name} className="overflow-hidden">
-                <CardContent className="p-6">
-                  <div className="flex items-start gap-4">
-                    <div className={`flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br ${agent.color}`}>
-                      <div className="h-8 w-8 rounded-lg bg-card flex items-center justify-center text-2xl font-bold">
-                        {agent.name[0]}
-                      </div>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-lg">{agent.name}</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {agent.description}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <div
+                key={agent.name}
+                className="rounded-xl border bg-card p-5 shadow-sm hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`h-3 w-3 rounded-full ${agent.color}`} />
+                  <h3 className="font-semibold">{agent.name}</h3>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {agent.description}
+                </p>
+              </div>
             ))}
           </div>
         </div>
