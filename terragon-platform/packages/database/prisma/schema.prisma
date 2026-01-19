@@ -192,6 +192,7 @@ model TaskArtifact {
   path      String?
   url       String?
   size      Int?
+  metadata  Json?
   createdAt DateTime     @default(now())
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)

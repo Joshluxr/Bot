@@ -3,6 +3,7 @@ import GithubProvider from 'next-auth/providers/github';
 import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from '@terragon/database';
+import jwt from 'jsonwebtoken';
 
 const handler = NextAuth({
   adapter: PrismaAdapter(prisma) as any,
@@ -28,9 +29,25 @@ const handler = NextAuth({
     async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
+        // Generate a JWT token for API authentication
+        token.accessToken = jwt.sign(
+          { id: user.id, email: user.email },
+          process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET!,
+          { expiresIn: '7d' }
+        );
       }
       if (account?.provider === 'github') {
         token.githubToken = account.access_token;
+
+        // Store the GitHub token in the database
+        try {
+          await prisma.user.update({
+            where: { id: token.id as string },
+            data: { githubToken: account.access_token },
+          });
+        } catch {
+          // User might not exist yet during first login
+        }
       }
       return token;
     },
@@ -39,6 +56,7 @@ const handler = NextAuth({
         session.user.id = token.id as string;
         session.user.githubToken = token.githubToken as string | undefined;
       }
+      session.accessToken = token.accessToken as string | undefined;
       return session;
     },
   },

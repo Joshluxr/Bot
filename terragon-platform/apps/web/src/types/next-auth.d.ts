@@ -9,6 +9,7 @@ declare module 'next-auth' {
       image?: string | null;
       githubToken?: string;
     };
+    accessToken?: string;
   }
 }
 
@@ -16,5 +17,6 @@ declare module 'next-auth/jwt' {
   interface JWT {
     id: string;
     githubToken?: string;
+    accessToken?: string;
   }
 }
