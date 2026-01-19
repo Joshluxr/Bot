@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 45 30% 96%;
+    --foreground: 20 14% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 20 14% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 14% 10%;
+    --primary: 142 76% 36%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 45 30% 90%;
+    --secondary-foreground: 20 14% 10%;
+    --muted: 45 20% 90%;
+    --muted-foreground: 20 14% 46%;
+    --accent: 45 30% 90%;
+    --accent-foreground: 20 14% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 20 14% 83%;
+    --input: 20 14% 83%;
+    --ring: 142 76% 36%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 20 14% 8%;
+    --foreground: 45 30% 96%;
+    --card: 20 14% 12%;
+    --card-foreground: 45 30% 96%;
+    --popover: 20 14% 12%;
+    --popover-foreground: 45 30% 96%;
+    --primary: 142 76% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 20 14% 18%;
+    --secondary-foreground: 45 30% 96%;
+    --muted: 20 14% 18%;
+    --muted-foreground: 45 20% 60%;
+    --accent: 20 14% 18%;
+    --accent-foreground: 45 30% 96%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 20 14% 20%;
+    --input: 20 14% 20%;
+    --ring: 142 76% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Terminal/log output styling */
+.terminal-output {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.terminal-output .log-info {
+  color: hsl(var(--muted-foreground));
+}
+
+.terminal-output .log-warn {
+  color: hsl(45 100% 50%);
+}
+
+.terminal-output .log-error {
+  color: hsl(0 84% 60%);
+}
+
+.terminal-output .log-success {
+  color: hsl(142 76% 45%);
+}

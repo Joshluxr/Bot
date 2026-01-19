@@ -1,0 +1,220 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+  Textarea,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@terragon/ui';
+import { ArrowLeft, Loader2 } from 'lucide-react';
+
+// Mock repos - in production these come from GitHub API
+const repos = [
+  { id: 1, name: 'acme/frontend', defaultBranch: 'main' },
+  { id: 2, name: 'acme/backend', defaultBranch: 'main' },
+  { id: 3, name: 'acme/mobile', defaultBranch: 'develop' },
+  { id: 4, name: 'acme/docs', defaultBranch: 'main' },
+];
+
+export default function NewTaskPage() {
+  const router = useRouter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    repoUrl: '',
+    repoBranch: 'main',
+    agentType: 'CLAUDE',
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    // Simulate API call
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    // In production, this would create the task via API
+    router.push('/dashboard/tasks');
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" asChild>
+          <Link href="/dashboard/tasks">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">New Task</h1>
+          <p className="text-muted-foreground">
+            Create a new AI-powered coding task
+          </p>
+        </div>
+      </div>
+
+      {/* Form */}
+      <form onSubmit={handleSubmit}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Task Details</CardTitle>
+            <CardDescription>
+              Describe what you want the AI agent to do
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Title */}
+            <div className="space-y-2">
+              <Label htmlFor="title">Title</Label>
+              <Input
+                id="title"
+                placeholder="e.g., Add user authentication flow"
+                value={formData.title}
+                onChange={(e) =>
+                  setFormData({ ...formData, title: e.target.value })
+                }
+                required
+              />
+            </div>
+
+            {/* Description */}
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                placeholder="Describe what you want done in detail. The more context you provide, the better the results."
+                rows={6}
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Tip: Include specific file names, function names, or requirements
+                for best results.
+              </p>
+            </div>
+
+            {/* Repository */}
+            <div className="space-y-2">
+              <Label htmlFor="repo">Repository</Label>
+              <Select
+                value={formData.repoUrl}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, repoUrl: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a repository" />
+                </SelectTrigger>
+                <SelectContent>
+                  {repos.map((repo) => (
+                    <SelectItem key={repo.id} value={`https://github.com/${repo.name}`}>
+                      {repo.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Don't see your repo?{' '}
+                <Link href="/dashboard/integrations" className="text-primary hover:underline">
+                  Connect more repositories
+                </Link>
+              </p>
+            </div>
+
+            {/* Branch */}
+            <div className="space-y-2">
+              <Label htmlFor="branch">Branch</Label>
+              <Input
+                id="branch"
+                placeholder="main"
+                value={formData.repoBranch}
+                onChange={(e) =>
+                  setFormData({ ...formData, repoBranch: e.target.value })
+                }
+              />
+            </div>
+
+            {/* Agent Type */}
+            <div className="space-y-2">
+              <Label htmlFor="agent">AI Agent</Label>
+              <Select
+                value={formData.agentType}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, agentType: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CLAUDE">
+                    Claude Code (Anthropic)
+                  </SelectItem>
+                  <SelectItem value="OPENAI">
+                    GPT-4 (OpenAI)
+                  </SelectItem>
+                  <SelectItem value="GEMINI">
+                    Gemini (Google)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Credit Estimate */}
+        <Card className="mt-6">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Estimated Credits</p>
+                <p className="text-sm text-muted-foreground">
+                  Based on typical task complexity
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold">15-30</p>
+                <p className="text-sm text-muted-foreground">credits</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-4 mt-6">
+          <Button variant="outline" type="button" asChild>
+            <Link href="/dashboard/tasks">Cancel</Link>
+          </Button>
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              'Create Task'
+            )}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
