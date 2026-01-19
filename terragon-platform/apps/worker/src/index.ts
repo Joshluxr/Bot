@@ -1,5 +1,6 @@
 import { Worker, Job } from 'bullmq';
 import { Redis } from 'ioredis';
+import { Octokit } from 'octokit';
 import dotenv from 'dotenv';
 import { prisma } from '@terragon/database';
 import { PLAN_LIMITS, CREDIT_COSTS } from '@terragon/shared';
@@ -10,19 +11,35 @@ const connection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', 
   maxRetriesPerRequest: null,
 });
 
+// Import services (these would be in a shared package in production)
+import { sandboxService, SandboxConfig } from './services/sandbox';
+import { agentRunner } from './services/agent-runner';
+
 interface TaskJobData {
   taskId: string;
   userId: string;
 }
 
-console.log('Starting Terragon Worker...');
+const logger = {
+  info: (jobId: string | undefined, message: string) => {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[Job ${jobId}] ${message}`);
+    }
+  },
+  error: (jobId: string | undefined, message: string, error?: unknown) => {
+    console.error(`[Job ${jobId}] ${message}`, error || '');
+  },
+};
+
+logger.info(undefined, 'Starting Terragon Worker...');
 
 const worker = new Worker<TaskJobData>(
   'tasks',
   async (job: Job<TaskJobData>) => {
     const { taskId, userId } = job.data;
+    let sandboxId: string | null = null;
 
-    console.log(`[Job ${job.id}] Processing task ${taskId}`);
+    logger.info(job.id, `Processing task ${taskId}`);
 
     try {
       // Update task status to RUNNING
@@ -53,59 +70,116 @@ const worker = new Worker<TaskJobData>(
       // Log: Starting
       await createLog(taskId, 'INFO', 'Starting task execution...');
 
-      // Get plan limits
+      // Get plan limits for timeout
       const planLimits = PLAN_LIMITS[task.user.plan as keyof typeof PLAN_LIMITS];
+      const timeoutSeconds = planLimits.sandboxTimeoutMinutes * 60;
 
-      // Simulate sandbox creation and agent execution
-      // In production, this would:
-      // 1. Create an E2B sandbox or Docker container
-      // 2. Clone the repository
-      // 3. Run the AI agent (Claude Code, GPT-4, etc.)
-      // 4. Commit changes and create PR
-
+      // Create sandbox environment
       await createLog(taskId, 'INFO', 'Creating sandbox environment...');
-      await simulateDelay(2000);
+      const sandboxConfig: SandboxConfig = {
+        timeoutSeconds,
+        envVars: {
+          GITHUB_TOKEN: task.user.githubToken || '',
+        },
+      };
 
+      const sandbox = await sandboxService.create(sandboxConfig);
+      sandboxId = sandbox.id;
+
+      // Update task with sandbox ID
+      await prisma.task.update({
+        where: { id: taskId },
+        data: { sandboxId: sandbox.id },
+      });
+
+      await createLog(taskId, 'INFO', `Sandbox created: ${sandbox.id}`);
+
+      // Clone repository
       await createLog(taskId, 'INFO', 'Cloning repository...');
-      await simulateDelay(3000);
+      const repoUrl = task.repoUrl.includes('github.com')
+        ? task.repoUrl
+        : `https://github.com/${task.repoUrl}`;
 
-      await createLog(taskId, 'INFO', 'Installing dependencies...');
-      await simulateDelay(5000);
+      // Add auth token to URL for private repos
+      const authRepoUrl = task.user.githubToken
+        ? repoUrl.replace('https://', `https://${task.user.githubToken}@`)
+        : repoUrl;
 
-      await createLog(taskId, 'INFO', `Starting ${task.agentType} agent...`);
-      await simulateDelay(2000);
+      await sandboxService.cloneRepository(sandbox.id, authRepoUrl, '/workspace');
 
-      // Simulate agent work
-      const agentSteps = [
-        'Analyzing codebase structure...',
-        'Understanding task requirements...',
-        'Planning implementation approach...',
-        'Writing code changes...',
-        'Running tests...',
-        'Reviewing changes...',
-      ];
-
-      for (let i = 0; i < agentSteps.length; i++) {
-        await createLog(taskId, 'INFO', agentSteps[i]);
-        await simulateDelay(3000 + Math.random() * 2000);
-
-        // Update progress
-        const progress = Math.round(((i + 1) / agentSteps.length) * 100);
-        console.log(`[Job ${job.id}] Progress: ${progress}%`);
+      // Checkout the specified branch
+      if (task.branch && task.branch !== 'main' && task.branch !== 'master') {
+        await sandboxService.exec(sandbox.id, `cd /workspace && git checkout ${task.branch}`, '/workspace');
       }
 
-      // Simulate PR creation
-      const hasChanges = Math.random() > 0.1; // 90% chance of having changes
+      // Install dependencies
+      await createLog(taskId, 'INFO', 'Installing dependencies...');
+      const installResult = await sandboxService.installDependencies(sandbox.id, '/workspace');
+      if (installResult.exitCode !== 0) {
+        await createLog(taskId, 'WARN', `Dependency installation warning: ${installResult.stderr}`);
+      }
+
+      // Create a new branch for changes
+      const branchName = `terragon/${task.id.slice(0, 8)}`;
+      await sandboxService.exec(sandbox.id, `cd /workspace && git checkout -b ${branchName}`, '/workspace');
+      await createLog(taskId, 'INFO', `Created branch: ${branchName}`);
+
+      // Run the AI agent
+      await createLog(taskId, 'INFO', `Starting ${task.agentType} agent...`);
+
+      const agentResult = await agentRunner.run({
+        sandboxId: sandbox.id,
+        agentType: task.agentType,
+        agentConfig: task.agentConfig as Record<string, unknown> | undefined,
+        task: {
+          title: task.title,
+          description: task.description,
+        },
+        onLog: async (level: string, message: string) => {
+          await createLog(taskId, level, message);
+        },
+        onProgress: async (progress: number) => {
+          logger.info(job.id, `Progress: ${progress}%`);
+        },
+      });
+
+      // Create PR if there are changes
       let pullRequestUrl: string | null = null;
 
-      if (hasChanges) {
+      if (agentResult.hasChanges) {
         await createLog(taskId, 'INFO', 'Changes detected. Creating pull request...');
-        await simulateDelay(2000);
 
-        // In production, this would create an actual PR
-        pullRequestUrl = `https://github.com/${task.repoUrl.replace('https://github.com/', '')}/pull/${Math.floor(Math.random() * 1000)}`;
+        // Commit changes
+        await sandboxService.exec(
+          sandbox.id,
+          `cd /workspace && git add -A && git commit -m "feat: ${task.title}\n\nGenerated by Terragon AI Agent"`,
+          '/workspace'
+        );
 
-        await createLog(taskId, 'INFO', `Pull request created: ${pullRequestUrl}`);
+        // Push branch
+        await sandboxService.exec(
+          sandbox.id,
+          `cd /workspace && git push origin ${branchName}`,
+          '/workspace'
+        );
+
+        // Create PR via GitHub API
+        if (task.user.githubToken) {
+          const octokit = new Octokit({ auth: task.user.githubToken });
+          const [owner, repo] = task.repoUrl.replace('https://github.com/', '').replace('.git', '').split('/');
+
+          const prResponse = await octokit.rest.pulls.create({
+            owner,
+            repo,
+            title: task.title,
+            body: `## Summary\n${task.description}\n\n## Changes\n${agentResult.filesChanged.map((f) => `- ${f}`).join('\n')}\n\n---\n*Generated by [Terragon](https://terragonlabs.com)*`,
+            head: branchName,
+            base: task.branch || 'main',
+          });
+
+          pullRequestUrl = prResponse.data.html_url;
+          await createLog(taskId, 'INFO', `Pull request created: ${pullRequestUrl}`);
+        }
       } else {
         await createLog(taskId, 'INFO', 'No changes were necessary.');
       }
@@ -114,6 +188,10 @@ const worker = new Worker<TaskJobData>(
       const executionTime = Math.ceil((Date.now() - startTime) / 1000);
       const executionMinutes = Math.ceil(executionTime / 60);
       const creditsUsed = executionMinutes * CREDIT_COSTS.SANDBOX_MINUTE;
+
+      // Terminate sandbox
+      await sandboxService.terminate(sandbox.id);
+      sandboxId = null;
 
       // Update task as completed
       await prisma.task.update({
@@ -124,6 +202,7 @@ const worker = new Worker<TaskJobData>(
           pullRequestUrl,
           creditsUsed,
           executionTime,
+          sandboxId: null,
         },
       });
 
@@ -149,11 +228,21 @@ const worker = new Worker<TaskJobData>(
       // Send notifications
       await sendNotifications(userId, task.title, 'completed', pullRequestUrl);
 
-      console.log(`[Job ${job.id}] Task ${taskId} completed successfully`);
+      logger.info(job.id, `Task ${taskId} completed successfully`);
 
       return { success: true, pullRequestUrl, creditsUsed };
-    } catch (error: any) {
-      console.error(`[Job ${job.id}] Task ${taskId} failed:`, error);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error(job.id, `Task ${taskId} failed:`, error);
+
+      // Terminate sandbox if still running
+      if (sandboxId) {
+        try {
+          await sandboxService.terminate(sandboxId);
+        } catch {
+          // Ignore sandbox termination errors during failure handling
+        }
+      }
 
       // Update task as failed
       await prisma.task.update({
@@ -161,11 +250,12 @@ const worker = new Worker<TaskJobData>(
         data: {
           status: 'FAILED',
           completedAt: new Date(),
-          errorMessage: error.message,
+          errorMessage,
+          sandboxId: null,
         },
       });
 
-      await createLog(taskId, 'ERROR', `Task failed: ${error.message}`);
+      await createLog(taskId, 'ERROR', `Task failed: ${errorMessage}`);
 
       // Get task title for notification
       const task = await prisma.task.findUnique({
@@ -222,14 +312,10 @@ async function createLog(taskId: string, level: string, message: string) {
   await prisma.taskLog.create({
     data: {
       taskId,
-      level: level as any,
+      level: level as 'INFO' | 'WARN' | 'ERROR' | 'DEBUG',
       message,
     },
   });
-}
-
-async function simulateDelay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function sendNotifications(

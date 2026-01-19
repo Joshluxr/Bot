@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import express from 'express';
 import { prisma } from '@terragon/database';
 import { PLAN_LIMITS } from '@terragon/shared';
+import { automationsService } from '../services/automations';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16',
@@ -165,26 +166,34 @@ router.post('/github', async (req: Request, res: Response, next: NextFunction) =
     const event = req.headers['x-github-event'] as string;
     const payload = req.body;
 
-    console.log(`GitHub webhook: ${event}`);
+    // Trigger automations based on GitHub events
+    const runs = await automationsService.handleGitHubEvent(event, {
+      repository: payload.repository,
+      ref: payload.ref,
+      action: payload.action,
+    });
 
-    // Handle different GitHub events
+    // Handle different GitHub events for logging
     switch (event) {
       case 'issues':
         if (payload.action === 'opened' || payload.action === 'labeled') {
-          // TODO: Check for automations that trigger on issues
-          console.log(`Issue ${payload.action}: ${payload.issue.title}`);
+          // Automations already triggered above via handleGitHubEvent
         }
         break;
 
       case 'push':
-        console.log(`Push to ${payload.repository.full_name}:${payload.ref}`);
+        // Automations already triggered above via handleGitHubEvent
         break;
 
-      default:
-        console.log(`Unhandled GitHub event: ${event}`);
+      case 'pull_request':
+        // Automations already triggered above via handleGitHubEvent
+        break;
     }
 
-    res.json({ received: true });
+    res.json({
+      received: true,
+      automationsTriggered: runs.length,
+    });
   } catch (error) {
     next(error);
   }

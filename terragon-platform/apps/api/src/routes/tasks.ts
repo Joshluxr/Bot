@@ -5,6 +5,7 @@ import { AuthenticatedRequest } from '../middleware/auth';
 import { BadRequestError, NotFoundError, ForbiddenError } from '../middleware/error-handler';
 import { taskQueue } from '../queues';
 import { PLAN_LIMITS } from '@terragon/shared';
+import { sandboxService } from '../services/sandbox';
 
 const router = Router();
 
@@ -173,6 +174,16 @@ router.post('/:id/cancel', async (req: AuthenticatedRequest, res: Response, next
       }
     }
 
+    // If running, terminate the sandbox
+    if (task.status === 'RUNNING' && task.sandboxId) {
+      try {
+        await sandboxService.terminate(task.sandboxId);
+      } catch (sandboxError) {
+        // Log but don't fail the cancellation if sandbox termination fails
+        console.error(`Failed to terminate sandbox ${task.sandboxId}:`, sandboxError);
+      }
+    }
+
     // Update status
     await prisma.task.update({
       where: { id: task.id },
@@ -181,8 +192,6 @@ router.post('/:id/cancel', async (req: AuthenticatedRequest, res: Response, next
         completedAt: new Date(),
       },
     });
-
-    // TODO: If running, terminate sandbox
 
     res.json({
       success: true,

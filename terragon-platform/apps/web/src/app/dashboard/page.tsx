@@ -1,68 +1,104 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DashboardHeader } from '@/components/dashboard/header';
 import { TaskList } from '@/components/dashboard/task-list';
 import { TaskDetail } from '@/components/dashboard/task-detail';
 import { NewTaskDialog } from '@/components/dashboard/new-task-dialog';
 import { Sidebar } from '@/components/dashboard/sidebar';
 
-// Mock data for demonstration
-const mockTasks = [
-  {
-    id: 'task_abc123',
-    title: 'Add authentication flow',
-    status: 'running' as const,
-    progress: 75,
-    repository: { fullName: 'acme/frontend', owner: 'acme', name: 'frontend' },
-    branch: 'feat/auth-flow',
-    agent: 'claude',
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'task_def456',
-    title: 'Fix pagination bug',
-    status: 'queued' as const,
-    repository: { fullName: 'acme/frontend', owner: 'acme', name: 'frontend' },
-    branch: 'fix/pagination',
-    agent: 'openai',
-    createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'task_ghi789',
-    title: 'Refactor API endpoints',
-    status: 'completed' as const,
-    progress: 100,
-    prUrl: 'https://github.com/acme/backend/pull/42',
-    repository: { fullName: 'acme/backend', owner: 'acme', name: 'backend' },
-    branch: 'refactor/api',
-    agent: 'claude',
-    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: 'task_jkl012',
-    title: 'Add unit tests for utils',
-    status: 'failed' as const,
-    repository: { fullName: 'acme/frontend', owner: 'acme', name: 'frontend' },
-    branch: 'test/utils',
-    agent: 'gemini',
-    error: 'Test suite failed with 3 errors',
-    createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 2.5 * 60 * 60 * 1000).toISOString(),
-  },
-];
+export interface Task {
+  id: string;
+  title: string;
+  status: 'running' | 'queued' | 'completed' | 'failed' | 'pending' | 'cancelled';
+  progress?: number;
+  repository: { fullName: string; owner: string; name: string };
+  branch: string;
+  agent: string;
+  prUrl?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
-export type Task = (typeof mockTasks)[0];
+interface TasksResponse {
+  success: boolean;
+  data: {
+    items: Task[];
+    total: number;
+    page: number;
+    pageSize: number;
+    hasMore: boolean;
+  };
+}
+
+async function fetchTasks(status?: string): Promise<Task[]> {
+  try {
+    const params = new URLSearchParams();
+    if (status && status !== 'all') {
+      params.set('status', status.toUpperCase());
+    }
+    params.set('pageSize', '50');
+
+    const response = await fetch(`/api/tasks?${params.toString()}`, {
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch tasks');
+    }
+
+    const data: TasksResponse = await response.json();
+
+    // Transform API response to match component interface
+    return data.data.items.map((item) => ({
+      ...item,
+      status: item.status.toLowerCase() as Task['status'],
+      repository: {
+        fullName: item.repository?.fullName || '',
+        owner: item.repository?.owner || '',
+        name: item.repository?.name || '',
+      },
+      agent: item.agent || 'claude',
+    }));
+  } catch (error) {
+    console.error('Error fetching tasks:', error);
+    return [];
+  }
+}
 
 export default function DashboardPage() {
-  const [tasks] = useState(mockTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'running' | 'queued' | 'completed' | 'failed'>('all');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const loadTasks = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const fetchedTasks = await fetchTasks();
+      setTasks(fetchedTasks);
+    } catch (err) {
+      setError('Failed to load tasks. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTasks();
+
+    // Poll for updates every 10 seconds for running tasks
+    const interval = setInterval(() => {
+      loadTasks();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [loadTasks]);
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
 
@@ -94,6 +130,19 @@ export default function DashboardPage() {
         />
 
         <main className="flex-1 p-4 md:p-6">
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 p-4 rounded-lg bg-red-500/10 text-red-500 text-sm">
+              {error}
+              <button
+                onClick={loadTasks}
+                className="ml-4 underline hover:no-underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* Filter Tabs */}
           <div className="flex gap-2 mb-6 overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0">
             {(['all', 'running', 'queued', 'completed', 'failed'] as const).map((f) => (
@@ -115,6 +164,13 @@ export default function DashboardPage() {
               </button>
             ))}
           </div>
+
+          {/* Loading State */}
+          {isLoading && tasks.length === 0 && (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full" />
+            </div>
+          )}
 
           {/* Task Grid / List */}
           <div className="grid gap-6 lg:grid-cols-2">

@@ -1,6 +1,8 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
-import { automationsService, AutomationTrigger } from '../services/automations';
+import { automationsService } from '../services/automations';
+import { AuthenticatedRequest } from '../middleware/auth';
+import { logger } from '@terragon/shared';
 
 const router = Router();
 
@@ -52,10 +54,12 @@ const createAutomationSchema = z.object({
 
 const updateAutomationSchema = createAutomationSchema.partial();
 
+const log = logger.child('automations');
+
 // List automations
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -63,16 +67,16 @@ router.get('/', async (req: Request, res: Response) => {
     const automations = await automationsService.list(userId);
     res.json({ automations });
   } catch (error) {
-    console.error('Error listing automations:', error);
+    log.error('Error listing automations', { error });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Get single automation
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     const automation = await automationsService.get(id);
     if (!automation) {
@@ -85,15 +89,18 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     res.json({ automation });
   } catch (error) {
-    console.error('Error getting automation:', error);
+    log.error('Error getting automation', { error });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
+type CreateAutomationInput = z.infer<typeof createAutomationSchema>;
+type UpdateAutomationInput = z.infer<typeof updateAutomationSchema>;
+
 // Create automation
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -106,19 +113,26 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
-    const automation = await automationsService.create(userId, validation.data as any);
+    const data: CreateAutomationInput = validation.data;
+    const automation = await automationsService.create(userId, {
+      name: data.name,
+      description: data.description,
+      enabled: data.enabled,
+      trigger: data.trigger,
+      task: data.task,
+    });
     res.status(201).json({ automation });
   } catch (error) {
-    console.error('Error creating automation:', error);
+    log.error('Error creating automation', { error });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Update automation
-router.patch('/:id', async (req: Request, res: Response) => {
+router.patch('/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     const existing = await automationsService.get(id);
     if (!existing) {
@@ -137,19 +151,20 @@ router.patch('/:id', async (req: Request, res: Response) => {
       });
     }
 
-    const automation = await automationsService.update(id, validation.data as any);
+    const data: UpdateAutomationInput = validation.data;
+    const automation = await automationsService.update(id, data);
     res.json({ automation });
   } catch (error) {
-    console.error('Error updating automation:', error);
+    log.error('Error updating automation', { error });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Delete automation
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     const existing = await automationsService.get(id);
     if (!existing) {
@@ -163,16 +178,16 @@ router.delete('/:id', async (req: Request, res: Response) => {
     await automationsService.delete(id);
     res.status(204).send();
   } catch (error) {
-    console.error('Error deleting automation:', error);
+    log.error('Error deleting automation', { error });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Enable automation
-router.post('/:id/enable', async (req: Request, res: Response) => {
+router.post('/:id/enable', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     const existing = await automationsService.get(id);
     if (!existing) {
@@ -187,16 +202,16 @@ router.post('/:id/enable', async (req: Request, res: Response) => {
     const automation = await automationsService.get(id);
     res.json({ automation });
   } catch (error) {
-    console.error('Error enabling automation:', error);
+    log.error('Error enabling automation', { error });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Disable automation
-router.post('/:id/disable', async (req: Request, res: Response) => {
+router.post('/:id/disable', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     const existing = await automationsService.get(id);
     if (!existing) {
@@ -211,16 +226,16 @@ router.post('/:id/disable', async (req: Request, res: Response) => {
     const automation = await automationsService.get(id);
     res.json({ automation });
   } catch (error) {
-    console.error('Error disabling automation:', error);
+    log.error('Error disabling automation', { error });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Manually trigger automation
-router.post('/:id/trigger', async (req: Request, res: Response) => {
+router.post('/:id/trigger', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
 
     const existing = await automationsService.get(id);
     if (!existing) {
@@ -238,16 +253,16 @@ router.post('/:id/trigger', async (req: Request, res: Response) => {
 
     res.json({ run });
   } catch (error) {
-    console.error('Error triggering automation:', error);
+    log.error('Error triggering automation', { error });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Get automation runs
-router.get('/:id/runs', async (req: Request, res: Response) => {
+router.get('/:id/runs', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     const limit = parseInt(req.query.limit as string) || 10;
 
     const existing = await automationsService.get(id);
@@ -262,7 +277,7 @@ router.get('/:id/runs', async (req: Request, res: Response) => {
     const runs = await automationsService.getRuns(id, limit);
     res.json({ runs });
   } catch (error) {
-    console.error('Error getting automation runs:', error);
+    log.error('Error getting automation runs', { error });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
