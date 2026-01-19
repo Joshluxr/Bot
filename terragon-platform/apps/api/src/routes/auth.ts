@@ -115,6 +115,80 @@ router.delete('/api-keys/:id', authMiddleware, async (req: AuthenticatedRequest,
   }
 });
 
+// Get user settings
+router.get('/settings', authMiddleware, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        plan: true,
+        credits: true,
+        settings: true,
+        createdAt: true,
+      },
+    });
+
+    res.json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update user settings
+router.patch('/settings', authMiddleware, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { name, settings } = req.body;
+
+    const updateData: any = {};
+
+    if (name !== undefined) {
+      updateData.name = name;
+    }
+
+    if (settings !== undefined) {
+      // Merge with existing settings
+      const currentUser = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { settings: true },
+      });
+
+      updateData.settings = {
+        ...(currentUser?.settings as object || {}),
+        ...settings,
+      };
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        plan: true,
+        credits: true,
+        settings: true,
+        createdAt: true,
+      },
+    });
+
+    res.json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Exchange GitHub OAuth token for JWT
 router.post('/github/callback', async (req: Request, res: Response, next: NextFunction) => {
   try {

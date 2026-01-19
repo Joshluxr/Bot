@@ -15,6 +15,7 @@ import taskRoutes from './routes/tasks';
 import integrationRoutes from './routes/integrations';
 import billingRoutes from './routes/billing';
 import webhookRoutes from './routes/webhooks';
+import automationRoutes from './routes/automations';
 
 import { initializeQueues } from './queues';
 import { initializeSocketHandlers } from './socket';
@@ -55,6 +56,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/tasks', authMiddleware, taskRoutes);
 app.use('/api/integrations', authMiddleware, integrationRoutes);
 app.use('/api/billing', authMiddleware, billingRoutes);
+app.use('/api/automations', authMiddleware, automationRoutes);
 
 // Error handling
 app.use(errorHandler);

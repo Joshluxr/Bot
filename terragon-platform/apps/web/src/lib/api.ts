@@ -2,6 +2,54 @@ import { ApiResponse, Task, User, PaginatedResponse, GitHubRepo } from '@terrago
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
+// Automation types
+export interface Automation {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  trigger: AutomationTrigger;
+  task: AutomationTask;
+  lastRunAt: string | null;
+  runCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AutomationTrigger =
+  | { type: 'schedule'; cron: string; timezone?: string }
+  | { type: 'github'; events: string[]; branches?: string[]; paths?: string[] }
+  | { type: 'slack'; channel?: string; keywords?: string[]; mentionOnly?: boolean }
+  | { type: 'webhook'; secret?: string };
+
+export interface AutomationTask {
+  repository: string;
+  prompt: string;
+  agent: string;
+  branch?: string;
+}
+
+export interface AutomationRun {
+  id: string;
+  automationId: string;
+  taskId: string | null;
+  triggeredBy: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  createdAt: string;
+}
+
+// API Key types
+export interface ApiKey {
+  id: string;
+  name: string;
+  key: string; // Masked key like "trg_abc1...xyz9"
+  prefix: string; // Alias for backwards compatibility
+  lastUsed: string | null;
+  lastUsedAt: string | null; // Alias
+  expiresAt: string | null;
+  createdAt: string;
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -190,6 +238,128 @@ class ApiClient {
       method: 'POST',
     });
     return response.data!.url;
+  }
+
+  // Automations
+  async getAutomations(): Promise<Automation[]> {
+    const response = await this.request<{ automations: Automation[] }>('/api/automations');
+    return response.data?.automations || [];
+  }
+
+  async getAutomation(id: string): Promise<Automation> {
+    const response = await this.request<{ automation: Automation }>(`/api/automations/${id}`);
+    return response.data!.automation;
+  }
+
+  async createAutomation(data: {
+    name: string;
+    description?: string;
+    enabled?: boolean;
+    trigger: AutomationTrigger;
+    task: AutomationTask;
+  }): Promise<Automation> {
+    const response = await this.request<{ automation: Automation }>('/api/automations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response.data!.automation;
+  }
+
+  async updateAutomation(id: string, data: Partial<{
+    name: string;
+    description: string;
+    enabled: boolean;
+    trigger: AutomationTrigger;
+    task: AutomationTask;
+  }>): Promise<Automation> {
+    const response = await this.request<{ automation: Automation }>(`/api/automations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return response.data!.automation;
+  }
+
+  async deleteAutomation(id: string): Promise<void> {
+    await this.request(`/api/automations/${id}`, { method: 'DELETE' });
+  }
+
+  async enableAutomation(id: string): Promise<Automation> {
+    const response = await this.request<{ automation: Automation }>(`/api/automations/${id}/enable`, {
+      method: 'POST',
+    });
+    return response.data!.automation;
+  }
+
+  async disableAutomation(id: string): Promise<Automation> {
+    const response = await this.request<{ automation: Automation }>(`/api/automations/${id}/disable`, {
+      method: 'POST',
+    });
+    return response.data!.automation;
+  }
+
+  async triggerAutomation(id: string): Promise<AutomationRun> {
+    const response = await this.request<{ run: AutomationRun }>(`/api/automations/${id}/trigger`, {
+      method: 'POST',
+    });
+    return response.data!.run;
+  }
+
+  async getAutomationRuns(id: string, limit?: number): Promise<AutomationRun[]> {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', limit.toString());
+    const response = await this.request<{ runs: AutomationRun[] }>(
+      `/api/automations/${id}/runs?${params.toString()}`
+    );
+    return response.data?.runs || [];
+  }
+
+  // API Keys
+  async getApiKeys(): Promise<ApiKey[]> {
+    const response = await this.request<ApiKey[]>('/api/auth/api-keys');
+    return response.data || [];
+  }
+
+  async createApiKey(data: { name: string; expiresIn?: number }): Promise<{ apiKey: ApiKey; token: string }> {
+    const response = await this.request<{ id: string; name: string; key: string; expiresAt: string | null; createdAt: string }>('/api/auth/api-keys', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    const apiKeyData = response.data!;
+    return {
+      apiKey: {
+        id: apiKeyData.id,
+        name: apiKeyData.name,
+        key: apiKeyData.key.slice(0, 8) + '...' + apiKeyData.key.slice(-4),
+        prefix: apiKeyData.key.slice(0, 8),
+        lastUsed: null,
+        lastUsedAt: null,
+        expiresAt: apiKeyData.expiresAt,
+        createdAt: apiKeyData.createdAt,
+      },
+      token: apiKeyData.key,
+    };
+  }
+
+  async deleteApiKey(id: string): Promise<void> {
+    await this.request(`/api/auth/api-keys/${id}`, { method: 'DELETE' });
+  }
+
+  // User Settings
+  async updateUserSettings(data: {
+    name?: string;
+    defaultAgent?: string;
+    notifications?: {
+      email?: boolean;
+      slack?: boolean;
+      taskCompleted?: boolean;
+      taskFailed?: boolean;
+    };
+  }): Promise<User> {
+    const response = await this.request<User>('/api/auth/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return response.data!;
   }
 }
 

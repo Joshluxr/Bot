@@ -2,6 +2,7 @@ import { Queue, Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
 import { prisma } from '@terragon/database';
 import { sandboxService } from './services/sandbox';
+import { slackService } from './services/slack';
 import { io } from './index';
 import {
   emitTaskStarted,
@@ -78,6 +79,15 @@ export function initializeQueues() {
 
         // Emit task started event
         emitTaskStarted(io, userId, taskId, sandbox.id);
+
+        // Send Slack notification for task started
+        await slackService.notifyTaskStarted(userId, {
+          taskId,
+          taskTitle: task.title,
+          repository: task.repoUrl.replace('https://github.com/', ''),
+          status: 'started',
+          agent: task.agentType,
+        });
 
         // Log: Starting
         await createLog(taskId, 'INFO', 'Task execution started');
@@ -171,6 +181,27 @@ export function initializeQueues() {
         // Emit completed event
         emitTaskCompleted(io, userId, taskId, null, executionTime, creditsUsed);
 
+        // Send Slack notification for task completed
+        await slackService.notifyTaskCompleted(userId, {
+          taskId,
+          taskTitle: task.title,
+          repository: task.repoUrl.replace('https://github.com/', ''),
+          status: 'completed',
+          agent: task.agentType,
+          pullRequestUrl: null, // Would be set if PR was created
+          executionTime,
+          creditsUsed,
+        });
+
+        // Check if user credits are running low and notify
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { credits: true },
+        });
+        if (user && user.credits < 100) {
+          await slackService.notifyCreditsLow(userId, user.credits, 100);
+        }
+
         console.log(`Task ${taskId} completed successfully`);
       } catch (error) {
         console.error(`Task ${taskId} failed:`, error);
@@ -190,6 +221,23 @@ export function initializeQueues() {
         await createLog(taskId, 'ERROR', `Task failed: ${errorMessage}`);
         emitLog(io, userId, taskId, 'ERROR', `Task failed: ${errorMessage}`);
         emitTaskFailed(io, userId, taskId, errorMessage);
+
+        // Get task details for notification
+        const failedTask = await prisma.task.findUnique({
+          where: { id: taskId },
+        });
+
+        // Send Slack notification for task failed
+        if (failedTask) {
+          await slackService.notifyTaskFailed(userId, {
+            taskId,
+            taskTitle: failedTask.title,
+            repository: failedTask.repoUrl.replace('https://github.com/', ''),
+            status: 'failed',
+            agent: failedTask.agentType,
+            errorMessage,
+          });
+        }
 
         throw error;
       }
