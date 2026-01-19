@@ -27,10 +27,13 @@ High-performance GPU-accelerated Bitcoin address search using bloom filters for 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    Dual-Format Search Pipeline                       │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Private Key                                                         │
+│  Random 32-byte Private Key (k)                                      │
 │       │                                                              │
 │       ▼                                                              │
-│  EC Point (x, y)                                                     │
+│  EC Scalar Multiplication: P = k * G  (CPU initialization)           │
+│       │                                                              │
+│       ▼                                                              │
+│  Valid EC Point (x, y) on secp256k1 curve                           │
 │       │                                                              │
 │       ├─► Compressed (02/03+x) ─► SHA256 ─► RIPEMD160 ─► hash160_c  │
 │       │                                                      │       │
@@ -46,6 +49,27 @@ High-performance GPU-accelerated Bitcoin address search using bloom filters for 
 │                              ▼                                       │
 │                    Candidate for Verification                        │
 └─────────────────────────────────────────────────────────────────────┘
+```
+
+## Key Generation (CRITICAL)
+
+**The key generation step is critical for correctness.** Each GPU thread needs a valid starting EC point:
+
+1. Generate random 32-byte private key `k`
+2. Compute public key `P = k * G` using EC scalar multiplication
+3. Use `P` as the starting point for that thread
+4. GPU iteration adds multiples of G: `P, P+G, P+2G, ...`
+
+**Why this matters:** Random bytes are almost NEVER valid secp256k1 curve points.
+The equation `y² = x³ + 7 (mod p)` must be satisfied. Without proper key generation,
+the search checks addresses that don't correspond to any private key.
+
+```
+WRONG (old buggy code):
+  random_bytes(64) → (x, y) → Not on curve! → Invalid addresses
+
+CORRECT (fixed code):
+  random_bytes(32) → k → P = k*G → Valid curve point → Real addresses
 ```
 
 ## Why Dual Format Matters
@@ -205,6 +229,14 @@ Finding a match is essentially impossible:
 This demonstrates Bitcoin's cryptographic security.
 
 ## Changelog
+
+### v2.1 (2025-01-19) - CRITICAL FIX
+- **FIXED: Key generation bug** - Random bytes were used as EC point coordinates
+  - Random 64-byte data is almost NEVER a valid secp256k1 curve point
+  - Previous searches were checking addresses that DON'T EXIST
+  - Now properly generates private keys and computes P = k*G
+- Added CPU-side EC scalar multiplication for valid starting point generation
+- Key generation takes ~5-10 minutes but guarantees correct search
 
 ### v2.0 (2025-01-19)
 - Added dual-format search (`-both` mode) for compressed + uncompressed
