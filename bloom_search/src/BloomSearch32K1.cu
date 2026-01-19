@@ -27,10 +27,13 @@
 
 #define NB_THREAD_PER_GROUP 512
 #define MAX_FOUND 65536
-#define SEARCH_COMPRESSED 0
-#define P2PKH 0
 #define STEP_SIZE 1024
 #define ITEM_SIZE32 8
+
+// Search mode flags
+#define MODE_COMPRESSED_ONLY 0
+#define MODE_UNCOMPRESSED_ONLY 1
+#define MODE_BOTH 2  // Default: search BOTH (important for early Bitcoin!)
 
 // Three-tier bloom filter structure
 struct TieredBloom {
@@ -144,9 +147,116 @@ __device__ __noinline__ bool CheckTieredBloom(
 }
 
 // ============================================================================
-// OPTIMIZED ENDOMORPHISM CHECK - Cache beta multiplications
+// OPTIMIZED ENDOMORPHISM CHECK - Check BOTH Compressed AND Uncompressed
 // ============================================================================
 
+// Address type flags for output metadata
+#define ADDR_COMPRESSED   0x8000   // Bit 15 = compressed
+#define ADDR_UNCOMPRESSED 0x0000   // Bit 15 = 0 for uncompressed
+
+// Helper: Record a bloom filter match
+__device__ __forceinline__ void RecordMatch(
+    uint32_t* out, uint32_t maxFound,
+    uint32_t tid, int32_t incr, uint32_t addrType, uint32_t endoType,
+    uint32_t* h
+) {
+    uint32_t pos = atomicAdd(out, 1);
+    if (pos < maxFound) {
+        out[pos * ITEM_SIZE32 + 1] = tid;
+        out[pos * ITEM_SIZE32 + 2] = (incr << 16) | addrType | endoType;
+        out[pos * ITEM_SIZE32 + 3] = h[0];
+        out[pos * ITEM_SIZE32 + 4] = h[1];
+        out[pos * ITEM_SIZE32 + 5] = h[2];
+        out[pos * ITEM_SIZE32 + 6] = h[3];
+        out[pos * ITEM_SIZE32 + 7] = h[4];
+    }
+}
+
+// Check a single point for both compressed AND uncompressed addresses
+__device__ __forceinline__ void CheckPointBothFormats(
+    uint64_t* px, uint64_t* py_positive, uint64_t* py_negative,
+    int32_t incr, uint32_t endoType,
+    const uint8_t* prefixTable32,
+    const uint32_t* bloom1, uint64_t bloom1Bits, const uint32_t* bloom1Seeds, int bloom1Hashes,
+    const uint32_t* bloom2, uint64_t bloom2Bits, const uint32_t* bloom2Seeds, int bloom2Hashes,
+    uint32_t maxFound, uint32_t* out
+) {
+    uint32_t h[5];
+    uint32_t tid = (blockIdx.x * blockDim.x) + threadIdx.x;
+    uint8_t isOdd = (uint8_t)(py_positive[0] & 1);
+    uint8_t isEven = isOdd ^ 1;
+
+    // === COMPRESSED ADDRESSES (33 bytes: 02/03 + x) ===
+
+    // Compressed +y
+    _GetHash160Comp(px, isOdd, (uint8_t*)h);
+    if (CheckTieredBloom(h, prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+                         bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes)) {
+        RecordMatch(out, maxFound, tid, incr, ADDR_COMPRESSED, endoType, h);
+    }
+
+    // Compressed -y
+    _GetHash160Comp(px, isEven, (uint8_t*)h);
+    if (CheckTieredBloom(h, prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+                         bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes)) {
+        RecordMatch(out, maxFound, tid, -incr, ADDR_COMPRESSED, endoType, h);
+    }
+
+    // === UNCOMPRESSED ADDRESSES (65 bytes: 04 + x + y) ===
+    // This is what early Bitcoin (2009-2012) used - Satoshi's coins!
+
+    // Uncompressed +y (using positive y)
+    _GetHash160(px, py_positive, (uint8_t*)h);
+    if (CheckTieredBloom(h, prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+                         bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes)) {
+        RecordMatch(out, maxFound, tid, incr, ADDR_UNCOMPRESSED, endoType, h);
+    }
+
+    // Uncompressed -y (using negative y)
+    _GetHash160(px, py_negative, (uint8_t*)h);
+    if (CheckTieredBloom(h, prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+                         bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes)) {
+        RecordMatch(out, maxFound, tid, -incr, ADDR_UNCOMPRESSED, endoType, h);
+    }
+}
+
+__device__ __noinline__ void CheckHashBothFormatsOptimized(
+    uint64_t* px, uint64_t* py, int32_t incr,
+    const uint8_t* prefixTable32,
+    const uint32_t* bloom1, uint64_t bloom1Bits, const uint32_t* bloom1Seeds, int bloom1Hashes,
+    const uint32_t* bloom2, uint64_t bloom2Bits, const uint32_t* bloom2Seeds, int bloom2Hashes,
+    uint32_t maxFound, uint32_t* out
+) {
+    uint64_t pe1x[4], pe2x[4];
+    uint64_t pyn[4];  // Negative y
+
+    // Compute beta multiplications ONCE (key optimization from keyhunt)
+    _ModMult(pe1x, px, _beta);
+    _ModMult(pe2x, px, _beta2);
+
+    // Compute negative y: -y mod p
+    ModNeg256(pyn, py);
+
+    // Check original point (px, py) - both compressed AND uncompressed
+    // Endomorphism type 0 = original point
+    CheckPointBothFormats(px, py, pyn, incr, 0,
+        prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+        bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes, maxFound, out);
+
+    // Check endomorphism 1: (beta*x, y) - both compressed AND uncompressed
+    // Endomorphism type 1
+    CheckPointBothFormats(pe1x, py, pyn, incr, 1,
+        prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+        bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes, maxFound, out);
+
+    // Check endomorphism 2: (beta2*x, y) - both compressed AND uncompressed
+    // Endomorphism type 2
+    CheckPointBothFormats(pe2x, py, pyn, incr, 2,
+        prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+        bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes, maxFound, out);
+}
+
+// Legacy function for backwards compatibility (compressed only)
 __device__ __noinline__ void CheckHashCompOptimized(
     uint64_t* px, uint64_t* py, int32_t incr,
     const uint8_t* prefixTable32,
@@ -269,9 +379,123 @@ __device__ __noinline__ void CheckHashCompOptimized(
 }
 
 // ============================================================================
-// MAIN COMPUTE KERNEL WITH ALL OPTIMIZATIONS
+// MAIN COMPUTE KERNEL - DUAL FORMAT (Compressed + Uncompressed)
 // ============================================================================
 
+__device__ void ComputeKeysK1Both(
+    uint64_t* startx, uint64_t* starty,
+    const uint8_t* prefixTable32,
+    const uint32_t* bloom1, uint64_t bloom1Bits, const uint32_t* bloom1Seeds, int bloom1Hashes,
+    const uint32_t* bloom2, uint64_t bloom2Bits, const uint32_t* bloom2Seeds, int bloom2Hashes,
+    uint32_t maxFound, uint32_t* out
+) {
+    uint64_t dx[GRP_SIZE/2+1][4];
+    uint64_t px[4], py[4], pyn[4], sx[4], sy[4], dy[4], _s[4], _p2[4];
+
+    __syncthreads();
+    Load256A(sx, startx);
+    Load256A(sy, starty);
+    Load256(px, sx);
+    Load256(py, sy);
+
+    for (uint32_t j = 0; j < STEP_SIZE / GRP_SIZE; j++) {
+        uint32_t i;
+
+        // Compute delta x values for batch inversion
+        for (i = 0; i < HSIZE; i++)
+            ModSub256(dx[i], Gx[i], sx);
+        ModSub256(dx[i], Gx[i], sx);
+        ModSub256(dx[i+1], _2Gnx, sx);
+
+        // Batch modular inversion (Montgomery's trick)
+        _ModInvGrouped(dx);
+
+        // Check center point - BOTH compressed AND uncompressed!
+        CheckHashBothFormatsOptimized(px, py, j*GRP_SIZE + GRP_SIZE/2,
+            prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+            bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes, maxFound, out);
+
+        ModNeg256(pyn, py);
+
+        // Process group points
+        for (i = 0; i < HSIZE; i++) {
+            // P = StartPoint + i*G
+            Load256(px, sx);
+            Load256(py, sy);
+            ModSub256(dy, Gy[i], py);
+            _ModMult(_s, dy, dx[i]);
+            _ModSqr(_p2, _s);
+            ModSub256(px, _p2, px);
+            ModSub256(px, Gx[i]);
+            ModSub256(py, Gx[i], px);
+            _ModMult(py, _s);
+            ModSub256(py, Gy[i]);
+
+            // Check BOTH compressed AND uncompressed addresses
+            CheckHashBothFormatsOptimized(px, py, j*GRP_SIZE + GRP_SIZE/2 + (i+1),
+                prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+                bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes, maxFound, out);
+
+            // P = StartPoint - i*G
+            Load256(px, sx);
+            ModSub256(dy, pyn, Gy[i]);
+            _ModMult(_s, dy, dx[i]);
+            _ModSqr(_p2, _s);
+            ModSub256(px, _p2, px);
+            ModSub256(px, Gx[i]);
+            ModSub256(py, Gx[i], px);
+            _ModMult(py, _s);
+            ModSub256(py, Gy[i]);
+            ModNeg256(py, py);
+
+            // Check BOTH compressed AND uncompressed addresses
+            CheckHashBothFormatsOptimized(px, py, j*GRP_SIZE + GRP_SIZE/2 - (i+1),
+                prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+                bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes, maxFound, out);
+        }
+
+        // First point
+        Load256(px, sx);
+        Load256(py, sy);
+        ModNeg256(dy, Gy[i]);
+        ModSub256(dy, py);
+        _ModMult(_s, dy, dx[i]);
+        _ModSqr(_p2, _s);
+        ModSub256(px, _p2, px);
+        ModSub256(px, Gx[i]);
+        ModSub256(py, Gx[i], px);
+        _ModMult(py, _s);
+        ModSub256(py, Gy[i]);
+        ModNeg256(py, py);
+
+        // Check BOTH compressed AND uncompressed addresses
+        CheckHashBothFormatsOptimized(px, py, j*GRP_SIZE,
+            prefixTable32, bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+            bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes, maxFound, out);
+
+        // Next start point
+        i++;
+        Load256(px, sx);
+        Load256(py, sy);
+        ModSub256(dy, _2Gny, py);
+        _ModMult(_s, dy, dx[i]);
+        _ModSqr(_p2, _s);
+        ModSub256(px, _p2, px);
+        ModSub256(px, _2Gnx);
+        ModSub256(py, _2Gnx, px);
+        _ModMult(py, _s);
+        ModSub256(py, _2Gny);
+
+        Load256(sx, px);
+        Load256(sy, py);
+    }
+
+    __syncthreads();
+    Store256A(startx, px);
+    Store256A(starty, py);
+}
+
+// Legacy: Compressed-only compute kernel (for backwards compatibility)
 __device__ void ComputeKeysK1(
     uint64_t* startx, uint64_t* starty,
     const uint8_t* prefixTable32,
@@ -383,9 +607,28 @@ __device__ void ComputeKeysK1(
 }
 
 // ============================================================================
-// KERNEL ENTRY POINT
+// KERNEL ENTRY POINTS
 // ============================================================================
 
+// NEW: Kernel that checks BOTH compressed AND uncompressed addresses
+// This is essential for finding early Bitcoin (2009-2012) including Satoshi's coins!
+__global__ void bloom_kernel_k1_both(
+    uint64_t* keys,
+    const uint8_t* prefixTable32,
+    const uint32_t* bloom1, uint64_t bloom1Bits, const uint32_t* bloom1Seeds, int bloom1Hashes,
+    const uint32_t* bloom2, uint64_t bloom2Bits, const uint32_t* bloom2Seeds, int bloom2Hashes,
+    uint32_t maxFound, uint32_t* found
+) {
+    int xPtr = (blockIdx.x * blockDim.x) * 8;
+    int yPtr = xPtr + 4 * NB_THREAD_PER_GROUP;
+    ComputeKeysK1Both(keys + xPtr, keys + yPtr,
+        prefixTable32,
+        bloom1, bloom1Bits, bloom1Seeds, bloom1Hashes,
+        bloom2, bloom2Bits, bloom2Seeds, bloom2Hashes,
+        maxFound, found);
+}
+
+// Legacy: Kernel that only checks compressed addresses
 __global__ void bloom_kernel_k1(
     uint64_t* keys,
     const uint8_t* prefixTable32,
@@ -455,6 +698,7 @@ int main(int argc, char** argv) {
     int bloom1Hashes = 8;
     int bloom2Hashes = 8;
     int gpuId = 0;
+    int searchMode = MODE_BOTH;  // Default: search BOTH compressed AND uncompressed
 
     // Parse arguments
     for (int i = 1; i < argc; i++) {
@@ -469,6 +713,10 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "-hashes2") && i+1 < argc) bloom2Hashes = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-gpu") && i+1 < argc) gpuId = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-state") && i+1 < argc) stateFile = argv[++i];
+        // Search mode options
+        else if (!strcmp(argv[i], "-both")) searchMode = MODE_BOTH;
+        else if (!strcmp(argv[i], "-compressed")) searchMode = MODE_COMPRESSED_ONLY;
+        else if (!strcmp(argv[i], "-uncompressed")) searchMode = MODE_UNCOMPRESSED_ONLY;
     }
 
     if (!prefixFile || !bloom1File || !seeds1File || !bloom1Bits) {
@@ -484,6 +732,11 @@ int main(int argc, char** argv) {
         printf("  -seeds2 <file>   Secondary bloom seeds file\n");
         printf("  -bits2 <n>       Secondary bloom filter bits\n");
         printf("  -hashes2 <n>     Secondary bloom hash count (default: 8)\n\n");
+        printf("Address Format (IMPORTANT for early Bitcoin!):\n");
+        printf("  -both            Search BOTH compressed AND uncompressed (DEFAULT)\n");
+        printf("                   -> Required to find Satoshi's coins & 2009-2012 addresses!\n");
+        printf("  -compressed      Search compressed only (modern wallets, post-2012)\n");
+        printf("  -uncompressed    Search uncompressed only (early Bitcoin 2009-2012)\n\n");
         printf("Other:\n");
         printf("  -gpu <id>        GPU device ID (default: 0)\n");
         printf("  -hashes <n>      Primary bloom hash count (default: 8)\n");
@@ -506,6 +759,14 @@ int main(int argc, char** argv) {
     cudaGetDeviceProperties(&prop, gpuId);
     printf("GPU %d: %s (K1-Optimized)\n", gpuId, prop.name);
     printf("Features: Batch ModInv + Cached Endomorphism + Tiered Bloom\n");
+
+    // Print search mode
+    const char* modeStr = (searchMode == MODE_BOTH) ? "BOTH (compressed + uncompressed)" :
+                          (searchMode == MODE_COMPRESSED_ONLY) ? "COMPRESSED only" : "UNCOMPRESSED only";
+    printf("Search Mode: %s\n", modeStr);
+    if (searchMode == MODE_BOTH) {
+        printf("  -> Will find early Bitcoin (2009-2012) AND modern addresses!\n");
+    }
 
     // Load prefix bitmap
     size_t prefixSize;
@@ -586,16 +847,31 @@ int main(int argc, char** argv) {
     uint64_t iter = 0;
     uint64_t totalHits = 0;
 
-    printf("\nStarting K1-optimized search (6 addresses per EC point)...\n\n");
+    // Calculate addresses per iteration based on mode
+    // Compressed-only: 6 addresses (3 endomorphisms x 2 y values)
+    // Both: 12 addresses (3 endomorphisms x 2 y values x 2 formats)
+    int addrsPerPoint = (searchMode == MODE_BOTH) ? 12 : 6;
+    printf("\nStarting K1-optimized search (%d addresses per EC point)...\n\n", addrsPerPoint);
 
     while (running) {
         cudaMemset(d_found, 0, 4);
 
-        bloom_kernel_k1<<<nbThread/NB_THREAD_PER_GROUP, NB_THREAD_PER_GROUP>>>(
-            d_keys, d_prefix,
-            d_bloom1, bloom1Bits, d_seeds1, bloom1Hashes,
-            d_bloom2, bloom2Bits, d_seeds2, bloom2Hashes,
-            MAX_FOUND, d_found);
+        // Use appropriate kernel based on search mode
+        if (searchMode == MODE_BOTH) {
+            // NEW: Check BOTH compressed AND uncompressed addresses
+            bloom_kernel_k1_both<<<nbThread/NB_THREAD_PER_GROUP, NB_THREAD_PER_GROUP>>>(
+                d_keys, d_prefix,
+                d_bloom1, bloom1Bits, d_seeds1, bloom1Hashes,
+                d_bloom2, bloom2Bits, d_seeds2, bloom2Hashes,
+                MAX_FOUND, d_found);
+        } else {
+            // Legacy: compressed-only kernel
+            bloom_kernel_k1<<<nbThread/NB_THREAD_PER_GROUP, NB_THREAD_PER_GROUP>>>(
+                d_keys, d_prefix,
+                d_bloom1, bloom1Bits, d_seeds1, bloom1Hashes,
+                d_bloom2, bloom2Bits, d_seeds2, bloom2Hashes,
+                MAX_FOUND, d_found);
+        }
 
         cudaDeviceSynchronize();
 
@@ -608,13 +884,16 @@ int main(int argc, char** argv) {
             // Log matches for verification
             for (uint32_t i = 0; i < numFound && i < 10; i++) {
                 uint32_t* item = h_found + 1 + i * ITEM_SIZE32;
-                printf("[CANDIDATE] tid=%u meta=%08x hash160=%08x%08x%08x%08x%08x\n",
-                       item[0], item[1], item[2], item[3], item[4], item[5], item[6]);
+                // Decode address type from metadata
+                uint32_t meta = item[1];
+                const char* addrType = (meta & ADDR_COMPRESSED) ? "COMP" : "UNCOMP";
+                printf("[CANDIDATE %s] tid=%u meta=%08x hash160=%08x%08x%08x%08x%08x\n",
+                       addrType, item[0], item[1], item[2], item[3], item[4], item[5], item[6]);
             }
         }
 
-        // With endomorphism: 6 addresses per point, 1024 points per thread
-        total += (uint64_t)nbThread * 1024 * 6;
+        // Count addresses checked based on mode
+        total += (uint64_t)nbThread * 1024 * addrsPerPoint;
         iter++;
 
         // Save checkpoint
