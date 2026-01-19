@@ -109,6 +109,9 @@ export interface GitHubRepo {
   defaultBranch: string;
   url: string;
   cloneUrl: string;
+  description?: string | null;
+  language?: string | null;
+  updatedAt?: string;
 }
 
 // ============================================================================

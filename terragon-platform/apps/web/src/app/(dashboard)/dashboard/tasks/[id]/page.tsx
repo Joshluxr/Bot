@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Button,
   Card,
@@ -14,6 +15,7 @@ import {
   TabsList,
   TabsTrigger,
   ScrollArea,
+  Skeleton,
 } from '@terragon/ui';
 import {
   ArrowLeft,
@@ -28,52 +30,23 @@ import {
   FileCode,
   RefreshCw,
   StopCircle,
+  AlertCircle,
 } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useSession } from 'next-auth/react';
+import { Task, TaskLog } from '@terragon/shared';
 
-// Mock task data
-const mockTask = {
-  id: '1',
-  title: 'Add user authentication flow',
-  description: 'Implement OAuth2 login with GitHub and Google providers. Include session management, protected routes, and user profile storage.',
-  status: 'RUNNING',
-  agentType: 'CLAUDE',
-  repo: 'acme/frontend',
-  repoUrl: 'https://github.com/acme/frontend',
-  branch: 'main',
-  targetBranch: 'feat/auth-flow',
-  createdAt: '2024-01-15T10:30:00Z',
-  startedAt: '2024-01-15T10:31:00Z',
-  creditsUsed: 12,
-  progress: 75,
-  sandboxId: 'sbx_abc123',
-};
-
-// Mock logs
-const mockLogs = [
-  { timestamp: '10:31:00', level: 'INFO', message: 'Starting sandbox environment...' },
-  { timestamp: '10:31:05', level: 'INFO', message: 'Sandbox ready. Cloning repository...' },
-  { timestamp: '10:31:15', level: 'INFO', message: 'Repository cloned. Installing dependencies...' },
-  { timestamp: '10:32:00', level: 'INFO', message: 'Dependencies installed. Starting agent...' },
-  { timestamp: '10:32:05', level: 'INFO', message: 'Agent initialized with Claude Code' },
-  { timestamp: '10:32:10', level: 'INFO', message: 'Reading project structure...' },
-  { timestamp: '10:33:00', level: 'INFO', message: 'Creating auth provider component...' },
-  { timestamp: '10:34:00', level: 'INFO', message: 'Implementing GitHub OAuth flow...' },
-  { timestamp: '10:35:00', level: 'INFO', message: 'Adding session management...' },
-  { timestamp: '10:36:00', level: 'INFO', message: 'Creating protected route wrapper...' },
-  { timestamp: '10:37:00', level: 'WARN', message: 'TypeScript warning: implicit any type' },
-  { timestamp: '10:37:05', level: 'INFO', message: 'Fixed type annotations' },
-  { timestamp: '10:38:00', level: 'INFO', message: 'Running tests...' },
-];
-
-// Mock file changes
-const mockChanges = [
-  { path: 'src/lib/auth.ts', additions: 145, deletions: 0, status: 'added' },
-  { path: 'src/components/AuthProvider.tsx', additions: 89, deletions: 0, status: 'added' },
-  { path: 'src/hooks/useAuth.ts', additions: 45, deletions: 0, status: 'added' },
-  { path: 'src/middleware.ts', additions: 32, deletions: 5, status: 'modified' },
-  { path: 'src/app/api/auth/[...nextauth]/route.ts', additions: 67, deletions: 0, status: 'added' },
-  { path: 'package.json', additions: 3, deletions: 0, status: 'modified' },
-];
+interface TaskWithArtifacts extends Task {
+  logs?: TaskLog[];
+  artifacts?: Array<{
+    id: string;
+    type: string;
+    name: string;
+    path: string;
+    size: number;
+    metadata?: Record<string, unknown>;
+  }>;
+}
 
 function getStatusIcon(status: string) {
   switch (status) {
@@ -85,6 +58,8 @@ function getStatusIcon(status: string) {
       return <CheckCircle className="h-5 w-5 text-green-500" />;
     case 'FAILED':
       return <XCircle className="h-5 w-5 text-red-500" />;
+    case 'CANCELLED':
+      return <AlertCircle className="h-5 w-5 text-gray-500" />;
     default:
       return <Clock className="h-5 w-5 text-gray-500" />;
   }
@@ -97,6 +72,7 @@ function getStatusBadge(status: string) {
     COMPLETED: 'success',
     FAILED: 'destructive',
     PENDING: 'secondary',
+    CANCELLED: 'outline',
   };
   return (
     <Badge variant={variants[status] || 'secondary'} className="text-sm">
@@ -105,12 +81,22 @@ function getStatusBadge(status: string) {
   );
 }
 
-function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleString('en-US', {
+function formatDate(date: Date | string | null): string {
+  if (!date) return 'N/A';
+  return new Date(date).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+  });
+}
+
+function formatTimestamp(date: Date | string): string {
+  return new Date(date).toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
   });
 }
 
@@ -122,29 +108,187 @@ function getLogLevelClass(level: string) {
       return 'text-yellow-500';
     case 'INFO':
       return 'text-muted-foreground';
+    case 'DEBUG':
+      return 'text-blue-400';
     default:
       return 'text-muted-foreground';
   }
 }
 
-export default function TaskDetailPage({ params }: { params: { id: string } }) {
-  const [logs, setLogs] = useState(mockLogs);
+function extractRepoName(repoUrl: string): string {
+  return repoUrl.split('/').slice(-2).join('/');
+}
 
-  // Simulate real-time log updates
+function TaskDetailSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start gap-4">
+        <Skeleton className="h-10 w-10" />
+        <div className="flex-1">
+          <Skeleton className="h-8 w-96 mb-2" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <Card key={i}>
+            <CardContent className="p-4">
+              <Skeleton className="h-4 w-20 mb-2" />
+              <Skeleton className="h-6 w-24" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <CardContent className="p-4">
+          <Skeleton className="h-[400px] w-full" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function TaskDetailPage({ params }: { params: { id: string } }) {
+  const { data: session } = useSession();
+  const router = useRouter();
+  const [task, setTask] = useState<TaskWithArtifacts | null>(null);
+  const [logs, setLogs] = useState<TaskLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+
+  const loadTask = useCallback(async () => {
+    try {
+      setError(null);
+      const taskData = await api.getTask(params.id);
+      setTask(taskData as TaskWithArtifacts);
+
+      if (taskData.status === 'RUNNING' || taskData.status === 'COMPLETED' || taskData.status === 'FAILED') {
+        const logsData = await api.getTaskLogs(params.id);
+        setLogs(logsData.logs.map(log => ({
+          ...log,
+          taskId: params.id,
+          timestamp: new Date(log.timestamp),
+        })) as TaskLog[]);
+      }
+    } catch (err) {
+      console.error('Failed to load task:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load task');
+    } finally {
+      setLoading(false);
+    }
+  }, [params.id]);
+
   useEffect(() => {
-    if (mockTask.status === 'RUNNING') {
-      const interval = setInterval(() => {
-        const newLog = {
-          timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }).slice(0, 8),
-          level: 'INFO',
-          message: `Processing... ${Math.floor(Math.random() * 100)}%`,
-        };
-        setLogs((prev) => [...prev, newLog].slice(-50));
-      }, 3000);
+    if (session?.accessToken) {
+      api.setToken(session.accessToken);
+      loadTask();
+    }
+  }, [session, loadTask]);
+
+  useEffect(() => {
+    if (!session?.accessToken || !task) return;
+
+    if (task.status === 'RUNNING' || task.status === 'QUEUED') {
+      const interval = setInterval(async () => {
+        try {
+          const taskData = await api.getTask(params.id);
+          setTask(taskData as TaskWithArtifacts);
+
+          if (taskData.status === 'RUNNING') {
+            const logsData = await api.getTaskLogs(params.id);
+            setLogs(logsData.logs.map(log => ({
+              ...log,
+              taskId: params.id,
+              timestamp: new Date(log.timestamp),
+            })) as TaskLog[]);
+          }
+        } catch (err) {
+          console.error('Failed to refresh task:', err);
+        }
+      }, 5000);
 
       return () => clearInterval(interval);
     }
-  }, []);
+  }, [session, task?.status, params.id]);
+
+  const handleCancel = async () => {
+    if (!task) return;
+
+    try {
+      setCancelling(true);
+      await api.cancelTask(task.id);
+      await loadTask();
+    } catch (err) {
+      console.error('Failed to cancel task:', err);
+      setError(err instanceof Error ? err.message : 'Failed to cancel task');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    if (!task) return;
+
+    try {
+      setRetrying(true);
+      await api.retryTask(task.id);
+      await loadTask();
+    } catch (err) {
+      console.error('Failed to retry task:', err);
+      setError(err instanceof Error ? err.message : 'Failed to retry task');
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  if (loading) {
+    return <TaskDetailSkeleton />;
+  }
+
+  if (error && !task) {
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="icon" asChild>
+          <Link href="/dashboard/tasks">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
+        <Card className="border-destructive">
+          <CardContent className="flex items-center gap-4 p-6">
+            <XCircle className="h-6 w-6 text-destructive" />
+            <div>
+              <p className="font-medium text-destructive">Error loading task</p>
+              <p className="text-sm text-muted-foreground">{error}</p>
+            </div>
+            <Button variant="outline" onClick={loadTask} className="ml-auto">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!task) {
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="icon" asChild>
+          <Link href="/dashboard/tasks">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
+        <Card>
+          <CardContent className="p-12 text-center">
+            <p className="text-muted-foreground">Task not found</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const fileChanges = task.artifacts?.filter(a => a.type === 'file_change') || [];
 
   return (
     <div className="space-y-6">
@@ -158,29 +302,72 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              {getStatusIcon(mockTask.status)}
-              <h1 className="text-2xl font-bold tracking-tight">{mockTask.title}</h1>
-              {getStatusBadge(mockTask.status)}
+              {getStatusIcon(task.status)}
+              <h1 className="text-2xl font-bold tracking-tight">{task.title}</h1>
+              {getStatusBadge(task.status)}
             </div>
-            <p className="text-muted-foreground mt-1">{mockTask.description}</p>
+            <p className="text-muted-foreground mt-1">{task.description}</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {mockTask.status === 'RUNNING' && (
-            <Button variant="destructive" size="sm">
-              <StopCircle className="mr-2 h-4 w-4" />
+          {(task.status === 'RUNNING' || task.status === 'QUEUED') && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleCancel}
+              disabled={cancelling}
+            >
+              {cancelling ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <StopCircle className="mr-2 h-4 w-4" />
+              )}
               Cancel
             </Button>
           )}
-          {mockTask.status === 'FAILED' && (
-            <Button variant="outline" size="sm">
-              <RefreshCw className="mr-2 h-4 w-4" />
+          {task.status === 'FAILED' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRetry}
+              disabled={retrying}
+            >
+              {retrying ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
               Retry
             </Button>
           )}
         </div>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <Card className="border-destructive">
+          <CardContent className="flex items-center gap-4 p-4">
+            <XCircle className="h-5 w-5 text-destructive" />
+            <p className="text-sm text-destructive">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Failed Task Error */}
+      {task.status === 'FAILED' && task.errorMessage && (
+        <Card className="border-destructive bg-destructive/5">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <XCircle className="h-5 w-5 text-destructive mt-0.5" />
+              <div>
+                <p className="font-medium text-destructive">Task Failed</p>
+                <p className="text-sm text-muted-foreground mt-1">{task.errorMessage}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Info Cards */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -191,11 +378,11 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
               <span className="text-sm">Repository</span>
             </div>
             <Link
-              href={mockTask.repoUrl}
+              href={task.repoUrl}
               target="_blank"
               className="font-medium hover:text-primary flex items-center gap-1"
             >
-              {mockTask.repo}
+              {extractRepoName(task.repoUrl)}
               <ExternalLink className="h-3 w-3" />
             </Link>
           </CardContent>
@@ -207,7 +394,10 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
               <GitBranch className="h-4 w-4" />
               <span className="text-sm">Branch</span>
             </div>
-            <p className="font-medium">{mockTask.branch} → {mockTask.targetBranch}</p>
+            <p className="font-medium">
+              {task.repoBranch}
+              {task.targetBranch && ` → ${task.targetBranch}`}
+            </p>
           </CardContent>
         </Card>
 
@@ -217,31 +407,27 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
               <Clock className="h-4 w-4" />
               <span className="text-sm">Started</span>
             </div>
-            <p className="font-medium">{formatDate(mockTask.startedAt!)}</p>
+            <p className="font-medium">{formatDate(task.startedAt)}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="p-4">
             <div className="text-muted-foreground text-sm mb-1">Credits Used</div>
-            <p className="text-2xl font-bold">{mockTask.creditsUsed}</p>
+            <p className="text-2xl font-bold">{task.creditsUsed}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Progress */}
-      {mockTask.status === 'RUNNING' && mockTask.progress && (
+      {/* Execution Time */}
+      {task.executionTime && (
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium">Progress</span>
-              <span className="text-sm text-muted-foreground">{mockTask.progress}%</span>
-            </div>
-            <div className="h-2 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full bg-primary rounded-full transition-all duration-500"
-                style={{ width: `${mockTask.progress}%` }}
-              />
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Execution Time</span>
+              <span className="font-medium">
+                {Math.floor(task.executionTime / 60)}m {task.executionTime % 60}s
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -256,7 +442,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
           </TabsTrigger>
           <TabsTrigger value="changes" className="flex items-center gap-2">
             <FileCode className="h-4 w-4" />
-            Changes ({mockChanges.length})
+            Changes ({fileChanges.length})
           </TabsTrigger>
         </TabsList>
 
@@ -268,17 +454,27 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
             <CardContent>
               <ScrollArea className="h-[400px] rounded-md border bg-muted/30 p-4">
                 <div className="terminal-output space-y-1 font-mono text-sm">
-                  {logs.map((log, index) => (
-                    <div key={index} className="flex gap-4">
-                      <span className="text-muted-foreground">[{log.timestamp}]</span>
-                      <span className={`w-12 ${getLogLevelClass(log.level)}`}>
-                        {log.level}
-                      </span>
-                      <span>{log.message}</span>
+                  {logs.length === 0 ? (
+                    <div className="text-muted-foreground text-center py-8">
+                      {task.status === 'QUEUED' || task.status === 'PENDING'
+                        ? 'Waiting for task to start...'
+                        : 'No logs available'}
                     </div>
-                  ))}
-                  {mockTask.status === 'RUNNING' && (
-                    <div className="flex items-center gap-2 text-muted-foreground">
+                  ) : (
+                    logs.map((log, index) => (
+                      <div key={log.id || index} className="flex gap-4">
+                        <span className="text-muted-foreground">
+                          [{formatTimestamp(log.timestamp)}]
+                        </span>
+                        <span className={`w-12 ${getLogLevelClass(log.level)}`}>
+                          {log.level}
+                        </span>
+                        <span>{log.message}</span>
+                      </div>
+                    ))
+                  )}
+                  {task.status === 'RUNNING' && (
+                    <div className="flex items-center gap-2 text-muted-foreground mt-2">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       <span>Waiting for more output...</span>
                     </div>
@@ -295,37 +491,50 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
               <CardTitle className="text-lg">File Changes</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {mockChanges.map((change, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 rounded-lg border"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Badge
-                        variant={change.status === 'added' ? 'success' : 'secondary'}
-                        className="w-16 justify-center"
+              {fileChanges.length === 0 ? (
+                <div className="text-muted-foreground text-center py-8">
+                  {task.status === 'COMPLETED'
+                    ? 'No file changes recorded'
+                    : 'File changes will appear here after the task completes'}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {fileChanges.map((change, index) => {
+                    const metadata = change.metadata as { additions?: number; deletions?: number; status?: string } | undefined;
+                    return (
+                      <div
+                        key={change.id || index}
+                        className="flex items-center justify-between p-3 rounded-lg border"
                       >
-                        {change.status}
-                      </Badge>
-                      <span className="font-mono text-sm">{change.path}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-green-500">+{change.additions}</span>
-                      {change.deletions > 0 && (
-                        <span className="text-red-500">-{change.deletions}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                        <div className="flex items-center gap-3">
+                          <Badge
+                            variant={metadata?.status === 'added' ? 'success' : 'secondary'}
+                            className="w-16 justify-center"
+                          >
+                            {metadata?.status || 'modified'}
+                          </Badge>
+                          <span className="font-mono text-sm">{change.path}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          {metadata?.additions !== undefined && (
+                            <span className="text-green-500">+{metadata.additions}</span>
+                          )}
+                          {metadata?.deletions !== undefined && metadata.deletions > 0 && (
+                            <span className="text-red-500">-{metadata.deletions}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
       {/* PR Link (when completed) */}
-      {mockTask.status === 'COMPLETED' && (
+      {task.status === 'COMPLETED' && task.pullRequestUrl && (
         <Card className="border-green-500/50 bg-green-500/5">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -339,7 +548,7 @@ export default function TaskDetailPage({ params }: { params: { id: string } }) {
                 </div>
               </div>
               <Button asChild>
-                <Link href="#" target="_blank">
+                <Link href={task.pullRequestUrl} target="_blank">
                   View Pull Request
                   <ExternalLink className="ml-2 h-4 w-4" />
                 </Link>

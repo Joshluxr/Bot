@@ -88,6 +88,68 @@ class ApiClient {
     await this.request(`/api/tasks/${id}/retry`, { method: 'POST' });
   }
 
+  async getTaskStats(): Promise<{
+    stats: {
+      tasksThisMonth: number;
+      completed: number;
+      successRate: string;
+      creditsUsed: number;
+    };
+    recentTasks: Array<{
+      id: string;
+      title: string;
+      status: string;
+      repo: string;
+      repoUrl: string;
+      createdAt: string;
+      pullRequestUrl: string | null;
+      errorMessage: string | null;
+    }>;
+  }> {
+    const response = await this.request<{
+      stats: {
+        tasksThisMonth: number;
+        completed: number;
+        successRate: string;
+        creditsUsed: number;
+      };
+      recentTasks: Array<{
+        id: string;
+        title: string;
+        status: string;
+        repo: string;
+        repoUrl: string;
+        createdAt: string;
+        pullRequestUrl: string | null;
+        errorMessage: string | null;
+      }>;
+    }>('/api/tasks/stats');
+    return response.data!;
+  }
+
+  async getTaskLogs(taskId: string, cursor?: string): Promise<{
+    logs: Array<{
+      id: string;
+      timestamp: string;
+      level: string;
+      message: string;
+    }>;
+    nextCursor: string | null;
+  }> {
+    const params = new URLSearchParams();
+    if (cursor) params.set('cursor', cursor);
+    const response = await this.request<{
+      logs: Array<{
+        id: string;
+        timestamp: string;
+        level: string;
+        message: string;
+      }>;
+      nextCursor: string | null;
+    }>(`/api/tasks/${taskId}/logs?${params.toString()}`);
+    return response.data!;
+  }
+
   // Integrations
   async getGitHubRepos(): Promise<GitHubRepo[]> {
     const response = await this.request<GitHubRepo[]>('/api/integrations/github/repos');

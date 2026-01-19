@@ -1,5 +1,8 @@
+'use client';
+
 import Link from 'next/link';
-import { Button, Card, CardContent, CardHeader, CardTitle, Badge } from '@terragon/ui';
+import { useEffect, useState } from 'react';
+import { Button, Card, CardContent, CardHeader, CardTitle, Badge, Skeleton } from '@terragon/ui';
 import {
   Plus,
   ArrowRight,
@@ -7,49 +10,28 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
+  AlertCircle,
 } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useSession } from 'next-auth/react';
 
-// Mock data - in production this would come from the API
-const recentTasks = [
-  {
-    id: '1',
-    title: 'Add user authentication flow',
-    status: 'RUNNING',
-    repo: 'acme/frontend',
-    createdAt: '2 hours ago',
-    progress: 75,
-  },
-  {
-    id: '2',
-    title: 'Fix pagination bug in dashboard',
-    status: 'QUEUED',
-    repo: 'acme/frontend',
-    createdAt: '3 hours ago',
-  },
-  {
-    id: '3',
-    title: 'Refactor API endpoints',
-    status: 'COMPLETED',
-    repo: 'acme/backend',
-    createdAt: '5 hours ago',
-    prUrl: 'https://github.com/acme/backend/pull/142',
-  },
-  {
-    id: '4',
-    title: 'Add unit tests for auth module',
-    status: 'FAILED',
-    repo: 'acme/backend',
-    createdAt: '1 day ago',
-    error: 'Test timeout exceeded',
-  },
-];
+interface TaskStats {
+  tasksThisMonth: number;
+  completed: number;
+  successRate: string;
+  creditsUsed: number;
+}
 
-const stats = [
-  { label: 'Tasks This Month', value: 24 },
-  { label: 'Completed', value: 18 },
-  { label: 'Success Rate', value: '75%' },
-  { label: 'Credits Used', value: 847 },
-];
+interface RecentTask {
+  id: string;
+  title: string;
+  status: string;
+  repo: string;
+  repoUrl: string;
+  createdAt: string;
+  pullRequestUrl: string | null;
+  errorMessage: string | null;
+}
 
 function getStatusIcon(status: string) {
   switch (status) {
@@ -61,6 +43,8 @@ function getStatusIcon(status: string) {
       return <CheckCircle className="h-4 w-4 text-green-500" />;
     case 'FAILED':
       return <XCircle className="h-4 w-4 text-red-500" />;
+    case 'CANCELLED':
+      return <AlertCircle className="h-4 w-4 text-gray-500" />;
     default:
       return <Clock className="h-4 w-4 text-gray-500" />;
   }
@@ -73,6 +57,7 @@ function getStatusBadge(status: string) {
     COMPLETED: 'success',
     FAILED: 'destructive',
     PENDING: 'secondary',
+    CANCELLED: 'outline',
   };
   return (
     <Badge variant={variants[status] || 'secondary'}>
@@ -81,7 +66,92 @@ function getStatusBadge(status: string) {
   );
 }
 
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return 'just now';
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
+  if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)} days ago`;
+  return date.toLocaleDateString();
+}
+
+function StatsLoadingSkeleton() {
+  return (
+    <div className="grid gap-4 md:grid-cols-4">
+      {[1, 2, 3, 4].map((i) => (
+        <Card key={i}>
+          <CardHeader className="pb-2">
+            <Skeleton className="h-4 w-24" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-8 w-16" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function TasksLoadingSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="flex items-center justify-between p-4 rounded-lg border">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-4 w-4 rounded-full" />
+            <div>
+              <Skeleton className="h-5 w-48 mb-2" />
+              <Skeleton className="h-4 w-32" />
+            </div>
+          </div>
+          <Skeleton className="h-6 w-20" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
+  const { data: session } = useSession();
+  const [stats, setStats] = useState<TaskStats | null>(null);
+  const [recentTasks, setRecentTasks] = useState<RecentTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (session?.accessToken) {
+      api.setToken(session.accessToken);
+      loadDashboardData();
+    }
+  }, [session]);
+
+  async function loadDashboardData() {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await api.getTaskStats();
+      setStats(data.stats);
+      setRecentTasks(data.recentTasks);
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const statsItems = stats
+    ? [
+        { label: 'Tasks This Month', value: stats.tasksThisMonth },
+        { label: 'Completed', value: stats.completed },
+        { label: 'Success Rate', value: stats.successRate },
+        { label: 'Credits Used', value: stats.creditsUsed },
+      ]
+    : [];
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -89,7 +159,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">
-            Welcome back! Here's an overview of your recent activity.
+            Welcome back! Here&apos;s an overview of your recent activity.
           </p>
         </div>
         <Button asChild>
@@ -100,21 +170,41 @@ export default function DashboardPage() {
         </Button>
       </div>
 
+      {/* Error Message */}
+      {error && (
+        <Card className="border-destructive">
+          <CardContent className="flex items-center gap-4 p-4">
+            <XCircle className="h-5 w-5 text-destructive" />
+            <div>
+              <p className="font-medium text-destructive">Error loading dashboard</p>
+              <p className="text-sm text-muted-foreground">{error}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadDashboardData} className="ml-auto">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        {stats.map((stat) => (
-          <Card key={stat.label}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {stat.label}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{stat.value}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {loading ? (
+        <StatsLoadingSkeleton />
+      ) : (
+        <div className="grid gap-4 md:grid-cols-4">
+          {statsItems.map((stat) => (
+            <Card key={stat.label}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {stat.label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{stat.value}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Recent Tasks */}
       <Card>
@@ -128,36 +218,42 @@ export default function DashboardPage() {
           </Button>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {recentTasks.map((task) => (
-              <Link
-                key={task.id}
-                href={`/dashboard/tasks/${task.id}`}
-                className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  {getStatusIcon(task.status)}
-                  <div>
-                    <p className="font-medium">{task.title}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {task.repo} • {task.createdAt}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  {task.status === 'RUNNING' && task.progress && (
-                    <div className="w-24 h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full bg-primary rounded-full transition-all"
-                        style={{ width: `${task.progress}%` }}
-                      />
+          {loading ? (
+            <TasksLoadingSkeleton />
+          ) : recentTasks.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>No tasks yet. Create your first task to get started!</p>
+              <Button asChild className="mt-4">
+                <Link href="/dashboard/tasks/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Task
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {recentTasks.map((task) => (
+                <Link
+                  key={task.id}
+                  href={`/dashboard/tasks/${task.id}`}
+                  className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    {getStatusIcon(task.status)}
+                    <div>
+                      <p className="font-medium">{task.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {task.repo} • {formatRelativeTime(task.createdAt)}
+                      </p>
                     </div>
-                  )}
-                  {getStatusBadge(task.status)}
-                </div>
-              </Link>
-            ))}
-          </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {getStatusBadge(task.status)}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

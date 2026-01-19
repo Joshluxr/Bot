@@ -1,10 +1,11 @@
+'use client';
+
 import Link from 'next/link';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Button,
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
   Badge,
   Input,
   Select,
@@ -12,6 +13,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Skeleton,
 } from '@terragon/ui';
 import {
   Plus,
@@ -20,74 +22,13 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
-  Filter,
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
-
-// Mock data
-const tasks = [
-  {
-    id: '1',
-    title: 'Add user authentication flow',
-    description: 'Implement OAuth2 login with GitHub and Google providers',
-    status: 'RUNNING',
-    agentType: 'CLAUDE',
-    repo: 'acme/frontend',
-    branch: 'main',
-    createdAt: '2024-01-15T10:30:00Z',
-    startedAt: '2024-01-15T10:31:00Z',
-    creditsUsed: 12,
-    progress: 75,
-  },
-  {
-    id: '2',
-    title: 'Fix pagination bug in dashboard',
-    description: 'Page numbers not updating correctly when switching pages',
-    status: 'QUEUED',
-    agentType: 'CLAUDE',
-    repo: 'acme/frontend',
-    branch: 'main',
-    createdAt: '2024-01-15T09:00:00Z',
-    creditsUsed: 0,
-  },
-  {
-    id: '3',
-    title: 'Refactor API endpoints',
-    description: 'Convert REST endpoints to use proper HTTP methods and status codes',
-    status: 'COMPLETED',
-    agentType: 'OPENAI',
-    repo: 'acme/backend',
-    branch: 'main',
-    createdAt: '2024-01-15T08:00:00Z',
-    completedAt: '2024-01-15T08:45:00Z',
-    creditsUsed: 23,
-    prUrl: 'https://github.com/acme/backend/pull/142',
-  },
-  {
-    id: '4',
-    title: 'Add unit tests for auth module',
-    description: 'Write comprehensive unit tests for the authentication module',
-    status: 'FAILED',
-    agentType: 'CLAUDE',
-    repo: 'acme/backend',
-    branch: 'main',
-    createdAt: '2024-01-14T16:00:00Z',
-    creditsUsed: 8,
-    error: 'Test timeout exceeded after 30 minutes',
-  },
-  {
-    id: '5',
-    title: 'Update dependencies',
-    description: 'Update all npm packages to their latest versions',
-    status: 'COMPLETED',
-    agentType: 'GEMINI',
-    repo: 'acme/frontend',
-    branch: 'develop',
-    createdAt: '2024-01-14T14:00:00Z',
-    completedAt: '2024-01-14T14:20:00Z',
-    creditsUsed: 5,
-    prUrl: 'https://github.com/acme/frontend/pull/89',
-  },
-];
+import { api } from '@/lib/api';
+import { useSession } from 'next-auth/react';
+import { Task, PaginatedResponse } from '@terragon/shared';
 
 function getStatusIcon(status: string) {
   switch (status) {
@@ -99,6 +40,8 @@ function getStatusIcon(status: string) {
       return <CheckCircle className="h-4 w-4 text-green-500" />;
     case 'FAILED':
       return <XCircle className="h-4 w-4 text-red-500" />;
+    case 'CANCELLED':
+      return <AlertCircle className="h-4 w-4 text-gray-500" />;
     default:
       return <Clock className="h-4 w-4 text-gray-500" />;
   }
@@ -111,6 +54,7 @@ function getStatusBadge(status: string) {
     COMPLETED: 'success',
     FAILED: 'destructive',
     PENDING: 'secondary',
+    CANCELLED: 'outline',
   };
   return (
     <Badge variant={variants[status] || 'secondary'}>
@@ -128,7 +72,116 @@ function formatDate(dateString: string) {
   });
 }
 
+function extractRepoName(repoUrl: string): string {
+  return repoUrl.split('/').slice(-2).join('/');
+}
+
+function TasksLoadingSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Card key={i}>
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <Skeleton className="h-4 w-4 rounded-full" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-5 w-48" />
+                  <Skeleton className="h-5 w-20" />
+                </div>
+                <Skeleton className="h-4 w-64 mt-2" />
+                <Skeleton className="h-3 w-48 mt-2" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function TasksPage() {
+  const { data: session } = useSession();
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    hasMore: false,
+  });
+  const [filters, setFilters] = useState({
+    status: 'all',
+    agentType: 'all',
+    search: '',
+  });
+
+  const loadTasks = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const params: { status?: string; agentType?: string; page?: number; pageSize?: number } = {
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+      };
+
+      if (filters.status !== 'all') {
+        params.status = filters.status.toUpperCase();
+      }
+      if (filters.agentType !== 'all') {
+        params.agentType = filters.agentType.toUpperCase();
+      }
+
+      const response = await api.getTasks(params);
+      setTasks(response.items);
+      setPagination(prev => ({
+        ...prev,
+        total: response.total,
+        hasMore: response.hasMore,
+      }));
+    } catch (err) {
+      console.error('Failed to load tasks:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load tasks');
+    } finally {
+      setLoading(false);
+    }
+  }, [pagination.page, pagination.pageSize, filters.status, filters.agentType]);
+
+  useEffect(() => {
+    if (session?.accessToken) {
+      api.setToken(session.accessToken);
+      loadTasks();
+    }
+  }, [session, loadTasks]);
+
+  const handleStatusChange = (value: string) => {
+    setFilters(prev => ({ ...prev, status: value }));
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handleAgentChange = (value: string) => {
+    setFilters(prev => ({ ...prev, agentType: value }));
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFilters(prev => ({ ...prev, search: e.target.value }));
+  };
+
+  const filteredTasks = tasks.filter(task => {
+    if (!filters.search) return true;
+    const searchLower = filters.search.toLowerCase();
+    return (
+      task.title.toLowerCase().includes(searchLower) ||
+      task.description.toLowerCase().includes(searchLower) ||
+      task.repoUrl.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const totalPages = Math.ceil(pagination.total / pagination.pageSize);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -153,9 +206,14 @@ export default function TasksPage() {
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search tasks..." className="pl-9" />
+              <Input
+                placeholder="Search tasks..."
+                className="pl-9"
+                value={filters.search}
+                onChange={handleSearchChange}
+              />
             </div>
-            <Select defaultValue="all">
+            <Select value={filters.status} onValueChange={handleStatusChange}>
               <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -165,9 +223,10 @@ export default function TasksPage() {
                 <SelectItem value="queued">Queued</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
-            <Select defaultValue="all">
+            <Select value={filters.agentType} onValueChange={handleAgentChange}>
               <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Agent" />
               </SelectTrigger>
@@ -176,72 +235,130 @@ export default function TasksPage() {
                 <SelectItem value="claude">Claude</SelectItem>
                 <SelectItem value="openai">OpenAI</SelectItem>
                 <SelectItem value="gemini">Gemini</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </CardContent>
       </Card>
 
+      {/* Error Message */}
+      {error && (
+        <Card className="border-destructive">
+          <CardContent className="flex items-center gap-4 p-4">
+            <XCircle className="h-5 w-5 text-destructive" />
+            <div>
+              <p className="font-medium text-destructive">Error loading tasks</p>
+              <p className="text-sm text-muted-foreground">{error}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadTasks} className="ml-auto">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Task List */}
-      <div className="space-y-4">
-        {tasks.map((task) => (
-          <Card key={task.id} className="hover:border-primary/30 transition-colors">
-            <Link href={`/dashboard/tasks/${task.id}`}>
-              <CardContent className="p-6">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div className="flex items-start gap-4 flex-1">
-                    {getStatusIcon(task.status)}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold truncate">{task.title}</h3>
-                        {getStatusBadge(task.status)}
-                        <Badge variant="outline">{task.agentType}</Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
-                        {task.description}
-                      </p>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                        <span>{task.repo}</span>
-                        <span>•</span>
-                        <span>{task.branch}</span>
-                        <span>•</span>
-                        <span>{formatDate(task.createdAt)}</span>
-                        {task.creditsUsed > 0 && (
-                          <>
-                            <span>•</span>
-                            <span>{task.creditsUsed} credits</span>
-                          </>
-                        )}
+      {loading ? (
+        <TasksLoadingSkeleton />
+      ) : filteredTasks.length === 0 ? (
+        <Card>
+          <CardContent className="p-12 text-center">
+            <p className="text-muted-foreground mb-4">
+              {filters.status !== 'all' || filters.agentType !== 'all' || filters.search
+                ? 'No tasks match your filters'
+                : 'No tasks yet. Create your first task to get started!'}
+            </p>
+            <Button asChild>
+              <Link href="/dashboard/tasks/new">
+                <Plus className="mr-2 h-4 w-4" />
+                Create Task
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {filteredTasks.map((task) => (
+            <Card key={task.id} className="hover:border-primary/30 transition-colors">
+              <Link href={`/dashboard/tasks/${task.id}`}>
+                <CardContent className="p-6">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4 flex-1">
+                      {getStatusIcon(task.status)}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold truncate">{task.title}</h3>
+                          {getStatusBadge(task.status)}
+                          <Badge variant="outline">{task.agentType}</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
+                          {task.description}
+                        </p>
+                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                          <span>{extractRepoName(task.repoUrl)}</span>
+                          <span>•</span>
+                          <span>{task.repoBranch}</span>
+                          <span>•</span>
+                          <span>{formatDate(task.createdAt.toString())}</span>
+                          {task.creditsUsed > 0 && (
+                            <>
+                              <span>•</span>
+                              <span>{task.creditsUsed} credits</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-4">
-                    {task.status === 'RUNNING' && task.progress && (
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full transition-all"
-                            style={{ width: `${task.progress}%` }}
-                          />
-                        </div>
-                        <span className="text-sm text-muted-foreground">
-                          {task.progress}%
-                        </span>
-                      </div>
-                    )}
-                    {task.prUrl && (
-                      <Badge variant="outline" className="text-primary">
-                        PR Ready
-                      </Badge>
-                    )}
+                    <div className="flex items-center gap-4">
+                      {task.pullRequestUrl && (
+                        <Badge variant="outline" className="text-primary">
+                          PR Ready
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Link>
-          </Card>
-        ))}
-      </div>
+                </CardContent>
+              </Link>
+            </Card>
+          ))}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Showing {((pagination.page - 1) * pagination.pageSize) + 1} to{' '}
+                {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
+                {pagination.total} tasks
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+                  disabled={pagination.page === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Page {pagination.page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+                  disabled={!pagination.hasMore}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

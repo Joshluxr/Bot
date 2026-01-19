@@ -9,6 +9,82 @@ import { sandboxService } from '../services/sandbox';
 
 const router = Router();
 
+// Get task stats
+router.get('/stats', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [
+      tasksThisMonth,
+      completedThisMonth,
+      totalCreditsUsed,
+      recentTasks,
+    ] = await Promise.all([
+      prisma.task.count({
+        where: {
+          userId: req.user!.id,
+          createdAt: { gte: startOfMonth },
+        },
+      }),
+      prisma.task.count({
+        where: {
+          userId: req.user!.id,
+          status: 'COMPLETED',
+          createdAt: { gte: startOfMonth },
+        },
+      }),
+      prisma.task.aggregate({
+        where: {
+          userId: req.user!.id,
+          createdAt: { gte: startOfMonth },
+        },
+        _sum: {
+          creditsUsed: true,
+        },
+      }),
+      prisma.task.findMany({
+        where: { userId: req.user!.id },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          repoUrl: true,
+          createdAt: true,
+          creditsUsed: true,
+          pullRequestUrl: true,
+          errorMessage: true,
+          startedAt: true,
+        },
+      }),
+    ]);
+
+    const successRate = tasksThisMonth > 0
+      ? Math.round((completedThisMonth / tasksThisMonth) * 100)
+      : 0;
+
+    res.json({
+      success: true,
+      data: {
+        stats: {
+          tasksThisMonth,
+          completed: completedThisMonth,
+          successRate: `${successRate}%`,
+          creditsUsed: totalCreditsUsed._sum.creditsUsed || 0,
+        },
+        recentTasks: recentTasks.map(task => ({
+          ...task,
+          repo: task.repoUrl.split('/').slice(-2).join('/'),
+        })),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // List tasks
 router.get('/', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -18,20 +18,21 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Skeleton,
 } from '@terragon/ui';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-
-// Mock repos - in production these come from GitHub API
-const repos = [
-  { id: 1, name: 'acme/frontend', defaultBranch: 'main' },
-  { id: 2, name: 'acme/backend', defaultBranch: 'main' },
-  { id: 3, name: 'acme/mobile', defaultBranch: 'develop' },
-  { id: 4, name: 'acme/docs', defaultBranch: 'main' },
-];
+import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useSession } from 'next-auth/react';
+import { GitHubRepo } from '@terragon/shared';
 
 export default function NewTaskPage() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [repos, setRepos] = useState<GitHubRepo[]>([]);
+  const [loadingRepos, setLoadingRepos] = useState(true);
+  const [reposError, setReposError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -40,15 +41,56 @@ export default function NewTaskPage() {
     agentType: 'CLAUDE',
   });
 
+  useEffect(() => {
+    if (session?.accessToken) {
+      api.setToken(session.accessToken);
+      loadRepos();
+    }
+  }, [session]);
+
+  async function loadRepos() {
+    try {
+      setLoadingRepos(true);
+      setReposError(null);
+      const repoList = await api.getGitHubRepos();
+      setRepos(repoList);
+    } catch (err) {
+      console.error('Failed to load repositories:', err);
+      setReposError(err instanceof Error ? err.message : 'Failed to load repositories');
+    } finally {
+      setLoadingRepos(false);
+    }
+  }
+
+  const handleRepoChange = (repoUrl: string) => {
+    const selectedRepo = repos.find(r => r.cloneUrl === repoUrl || r.url === repoUrl);
+    setFormData({
+      ...formData,
+      repoUrl,
+      repoBranch: selectedRepo?.defaultBranch || 'main',
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setSubmitError(null);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      await api.createTask({
+        title: formData.title,
+        description: formData.description,
+        repoUrl: formData.repoUrl,
+        repoBranch: formData.repoBranch,
+        agentType: formData.agentType,
+      });
 
-    // In production, this would create the task via API
-    router.push('/dashboard/tasks');
+      router.push('/dashboard/tasks');
+    } catch (err) {
+      console.error('Failed to create task:', err);
+      setSubmitError(err instanceof Error ? err.message : 'Failed to create task');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -78,6 +120,14 @@ export default function NewTaskPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Submit Error */}
+            {submitError && (
+              <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                <p className="text-sm">{submitError}</p>
+              </div>
+            )}
+
             {/* Title */}
             <div className="space-y-2">
               <Label htmlFor="title">Title</Label>
@@ -114,25 +164,48 @@ export default function NewTaskPage() {
             {/* Repository */}
             <div className="space-y-2">
               <Label htmlFor="repo">Repository</Label>
-              <Select
-                value={formData.repoUrl}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, repoUrl: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a repository" />
-                </SelectTrigger>
-                <SelectContent>
-                  {repos.map((repo) => (
-                    <SelectItem key={repo.id} value={`https://github.com/${repo.name}`}>
-                      {repo.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {loadingRepos ? (
+                <Skeleton className="h-10 w-full" />
+              ) : reposError ? (
+                <div className="flex items-center justify-between p-3 rounded-md border border-destructive">
+                  <span className="text-sm text-destructive">{reposError}</span>
+                  <Button variant="outline" size="sm" onClick={loadRepos}>
+                    Retry
+                  </Button>
+                </div>
+              ) : repos.length === 0 ? (
+                <div className="p-4 rounded-md border text-center">
+                  <p className="text-muted-foreground mb-2">
+                    No repositories connected
+                  </p>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href="/dashboard/integrations">Connect GitHub</Link>
+                  </Button>
+                </div>
+              ) : (
+                <Select
+                  value={formData.repoUrl}
+                  onValueChange={handleRepoChange}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a repository" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {repos.map((repo) => (
+                      <SelectItem key={repo.id} value={repo.cloneUrl || repo.url}>
+                        <div className="flex items-center gap-2">
+                          <span>{repo.fullName}</span>
+                          {repo.private && (
+                            <span className="text-xs text-muted-foreground">(private)</span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <p className="text-xs text-muted-foreground">
-                Don't see your repo?{' '}
+                Don&apos;t see your repo?{' '}
                 <Link href="/dashboard/integrations" className="text-primary hover:underline">
                   Connect more repositories
                 </Link>
@@ -174,6 +247,9 @@ export default function NewTaskPage() {
                   <SelectItem value="GEMINI">
                     Gemini (Google)
                   </SelectItem>
+                  <SelectItem value="CUSTOM">
+                    Custom Agent
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -203,7 +279,10 @@ export default function NewTaskPage() {
           <Button variant="outline" type="button" asChild>
             <Link href="/dashboard/tasks">Cancel</Link>
           </Button>
-          <Button type="submit" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            disabled={isSubmitting || !formData.repoUrl || !formData.title || !formData.description}
+          >
             {isSubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
