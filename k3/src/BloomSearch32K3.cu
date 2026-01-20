@@ -671,16 +671,38 @@ static void scalar_mult_G(uint64_t* rx, uint64_t* ry, const uint64_t* k) {
     }
 }
 
-// K3: Initialize keys with COALESCED memory layout
-static void init_valid_keys_k3(uint64_t* h_keys_x, uint64_t* h_keys_y, int nbThread) {
+// K3: Initialize keys with COALESCED memory layout and RANGE PARTITIONING
+// rangeId: 0-255 for partitioning the 256-bit key space into ranges
+// totalRanges: how many partitions (e.g., 8 for 8 GPUs)
+static void init_valid_keys_k3_range(uint64_t* h_keys_x, uint64_t* h_keys_y, int nbThread,
+                                      int rangeId, int totalRanges) {
     printf("K3: Generating %d valid EC starting points (coalesced layout)...\n", nbThread);
-    printf("    Using /dev/urandom for cryptographic randomness\n");
+
+    if (totalRanges > 1) {
+        printf("    RANGE PARTITIONING: GPU %d of %d (range 0x%02X..)\n",
+               rangeId, totalRanges, (rangeId * 256) / totalRanges);
+    } else {
+        printf("    Using /dev/urandom for cryptographic randomness\n");
+    }
 
     uint8_t privkey[32];
 
+    // Calculate range boundaries for this GPU
+    // Each GPU gets a different high byte range to ensure no overlap
+    uint8_t rangeStart = (rangeId * 256) / totalRanges;
+    uint8_t rangeEnd = ((rangeId + 1) * 256) / totalRanges - 1;
+
     for (int t = 0; t < nbThread; t++) {
         secure_random(privkey, 32);
-        privkey[0] |= 1;
+        privkey[0] |= 1;  // Ensure odd for valid scalar
+
+        // Set the high byte to be within this GPU's range
+        // This partitions the key space so each GPU searches different keys
+        if (totalRanges > 1) {
+            // Map the random high byte to this GPU's range
+            uint8_t rangeSize = rangeEnd - rangeStart + 1;
+            privkey[31] = rangeStart + (privkey[31] % rangeSize);
+        }
 
         uint64_t k[4];
         memcpy(k, privkey, 32);
@@ -706,6 +728,14 @@ static void init_valid_keys_k3(uint64_t* h_keys_x, uint64_t* h_keys_y, int nbThr
         }
     }
     printf("\n    Done! All starting points use K3 coalesced layout.\n");
+    if (totalRanges > 1) {
+        printf("    Range: private keys with high byte 0x%02X to 0x%02X\n", rangeStart, rangeEnd);
+    }
+}
+
+// Backwards compatible wrapper
+static void init_valid_keys_k3(uint64_t* h_keys_x, uint64_t* h_keys_y, int nbThread) {
+    init_valid_keys_k3_range(h_keys_x, h_keys_y, nbThread, 0, 1);
 }
 
 void save_state_k3(const char* f, uint64_t* kx, uint64_t* ky, int n, uint64_t t) {
@@ -773,6 +803,8 @@ int main(int argc, char** argv) {
     int bloom2Hashes = 8;
     int gpuId = 0;
     int searchMode = MODE_BOTH;
+    int rangeId = -1;      // -1 means auto (use gpuId)
+    int totalRanges = 1;   // 1 means no partitioning
 
     // Parse arguments
     for (int i = 1; i < argc; i++) {
@@ -787,6 +819,8 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "-hashes2") && i+1 < argc) bloom2Hashes = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-gpu") && i+1 < argc) gpuId = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-state") && i+1 < argc) stateFile = argv[++i];
+        else if (!strcmp(argv[i], "-range") && i+1 < argc) rangeId = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-ranges") && i+1 < argc) totalRanges = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-both")) searchMode = MODE_BOTH;
         else if (!strcmp(argv[i], "-compressed")) searchMode = MODE_COMPRESSED_ONLY;
         else if (!strcmp(argv[i], "-uncompressed")) searchMode = MODE_UNCOMPRESSED_ONLY;
@@ -816,7 +850,19 @@ int main(int argc, char** argv) {
         printf("  -both            Search both formats (default)\n");
         printf("  -compressed      Compressed only\n");
         printf("  -uncompressed    Uncompressed only\n");
+        printf("  -range <id>      Range partition ID (default: same as gpu)\n");
+        printf("  -ranges <n>      Total number of range partitions (default: 1 = no partitioning)\n");
+        printf("\nRange Partitioning:\n");
+        printf("  Use -ranges 8 with 8 GPUs to ensure each GPU searches different key ranges.\n");
+        printf("  Example: ./BloomSearch32K3 ... -gpu 0 -ranges 8\n");
+        printf("           ./BloomSearch32K3 ... -gpu 1 -ranges 8\n");
+        printf("  Each GPU will search 1/8th of the key space with no overlap.\n");
         return 1;
+    }
+
+    // Auto-set rangeId from gpuId if not specified
+    if (rangeId < 0) {
+        rangeId = gpuId;
     }
 
     // K3: Round bloom filter bits to power of 2 for fast bitmask
@@ -929,8 +975,9 @@ int main(int argc, char** argv) {
     if (resumedKeys > 0) {
         printf("Resumed from checkpoint: %.2fB keys checked\n", resumedKeys / 1e9);
     } else {
-        init_valid_keys_k3(h_keys_x, h_keys_y, nbThread);
-        printf("Starting fresh K3 search with random EC points\n");
+        init_valid_keys_k3_range(h_keys_x, h_keys_y, nbThread, rangeId, totalRanges);
+        printf("Starting fresh K3 search with %s EC points\n",
+               totalRanges > 1 ? "PARTITIONED" : "random");
     }
 
     CUDA_CHECK(cudaMemcpy(d_keys_x, h_keys_x, nbThread * 4 * sizeof(uint64_t), cudaMemcpyHostToDevice));
