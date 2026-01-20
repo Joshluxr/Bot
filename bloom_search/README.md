@@ -55,7 +55,7 @@ High-performance GPU-accelerated Bitcoin address search using bloom filters for 
 
 **The key generation step is critical for correctness.** Each GPU thread needs a valid starting EC point:
 
-1. Generate random 32-byte private key `k`
+1. Generate random 32-byte private key `k` from `/dev/urandom`
 2. Compute public key `P = k * G` using EC scalar multiplication
 3. Use `P` as the starting point for that thread
 4. GPU iteration adds multiples of G: `P, P+G, P+2G, ...`
@@ -70,6 +70,41 @@ WRONG (old buggy code):
 
 CORRECT (fixed code):
   random_bytes(32) → k → P = k*G → Valid curve point → Real addresses
+```
+
+## Random Starting Points (SECURITY)
+
+**IMPORTANT: The search ALWAYS starts from cryptographically random private keys.**
+
+This is a deliberate security decision:
+
+1. **Never starts from k=0, k=1, k=2...** - Many other searchers use sequential keys
+2. **Uses /dev/urandom** - True cryptographic randomness, not PRNG
+3. **Each GPU gets unique random keys** - No overlap between GPUs
+4. **Ensures unique keyspace coverage** - Won't waste time on already-searched ranges
+
+```
+WRONG (what others do):
+  Start from k=1, k=2, k=3... (predictable, overlap with other searchers)
+
+CORRECT (what we do):
+  Start from random k ∈ [1, N-1] using /dev/urandom (unique coverage)
+```
+
+The 256-bit keyspace (2^256 ≈ 10^77 keys) is so vast that random starting points
+have essentially zero probability of overlapping, even across millions of searchers.
+
+### Configuration
+
+There is **no option to start from sequential keys** - this is intentional.
+The search will:
+- Generate fresh random starting points on first run
+- Save state to checkpoint files
+- Resume from saved state on restart
+
+To force new random starting points, delete the state file:
+```bash
+rm state_gpu*.dat
 ```
 
 ## Why Dual Format Matters
@@ -229,6 +264,14 @@ Finding a match is essentially impossible:
 This demonstrates Bitcoin's cryptographic security.
 
 ## Changelog
+
+### v2.2 (2026-01-20) - Random Starting Points
+- **SECURITY: Enforced random starting points** - Never starts from k=0,1,2...
+  - Uses /dev/urandom for cryptographic randomness
+  - Avoids overlap with other searchers who use sequential keys
+  - Each GPU instance gets unique random keyspace
+- Added documentation explaining random start security
+- Updated comments in source code
 
 ### v2.1 (2025-01-19) - CRITICAL FIX
 - **FIXED: Key generation bug** - Random bytes were used as EC point coordinates

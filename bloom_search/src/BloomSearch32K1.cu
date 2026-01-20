@@ -910,14 +910,26 @@ static void scalar_mult_G(uint64_t* rx, uint64_t* ry, const uint64_t* k) {
     }
 }
 
-// Initialize h_keys with valid EC points from random private keys
+// Initialize h_keys with valid EC points from RANDOM private keys
+//
+// SECURITY CRITICAL: We use /dev/urandom to generate truly random 256-bit private keys.
+// This is essential because:
+// 1. Many searchers start from k=1,2,3... (sequential from zero)
+// 2. Starting from random points ensures we cover unique keyspace
+// 3. Overlapping with other searchers wastes computational resources
+// 4. Random starting points are cryptographically unpredictable
+//
+// The private key k is generated randomly, then we compute P = k*G on CPU.
+// This P becomes the starting point for GPU iteration.
 static void init_valid_keys(uint64_t* h_keys, int nbThread) {
     printf("Generating %d valid EC starting points (this may take a moment)...\n", nbThread);
+    printf("  Using /dev/urandom for cryptographic randomness\n");
 
     uint8_t privkey[32];
 
     for (int t = 0; t < nbThread; t++) {
-        // Generate random 32-byte private key
+        // Generate random 32-byte private key from /dev/urandom
+        // This ensures truly random starting points, NOT sequential from zero!
         secure_random(privkey, 32);
 
         // Ensure it's in valid range (1 to N-1)
@@ -1172,14 +1184,24 @@ int main(int argc, char** argv) {
     // Initialize keys - IMPORTANT: Must use valid EC points, not random bytes!
     // Random bytes are almost NEVER valid points on the secp256k1 curve.
     // We generate random private keys and compute P = k*G for each thread.
+    //
+    // SECURITY: NEVER start from counter zero or sequential keys!
+    // Many other searchers start from low key ranges (k=1,2,3...).
+    // Always use cryptographically random starting points from /dev/urandom.
+    // This ensures we search unique keyspace that others haven't covered.
     uint64_t* h_keys = (uint64_t*)malloc(nbThread * 64);
     uint64_t resumedKeys = load_state(stateFile, h_keys, nbThread);
     if (resumedKeys > 0) {
         printf("Resumed from checkpoint: %.2fB keys checked\n", resumedKeys / 1e9);
+        printf("  NOTE: Continuing from saved random starting points\n");
     } else {
-        // Generate valid EC starting points from random private keys
+        // ALWAYS generate fresh random starting points - NEVER use sequential keys!
+        // This is critical to avoid overlap with other searchers who start from k=1,2,3...
+        printf("IMPORTANT: Generating cryptographically random starting points\n");
+        printf("  -> Using /dev/urandom for true randomness\n");
+        printf("  -> This ensures unique keyspace coverage\n");
         init_valid_keys(h_keys, nbThread);
-        printf("Starting fresh search with valid EC points\n");
+        printf("Starting fresh search with random EC points (NOT sequential!)\n");
     }
     cudaMemcpy(d_keys, h_keys, nbThread * 64, cudaMemcpyHostToDevice);
 
