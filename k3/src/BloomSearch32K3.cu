@@ -649,6 +649,53 @@ static void point_double(uint64_t* rx, uint64_t* ry,
     mod_sub(ry, ry, py);
 }
 
+// Convert decimal string to 256-bit integer
+// Handles very large decimal numbers by repeated multiply-by-10-and-add
+static void decimal_to_256bit(const char* decimal, uint64_t* result) {
+    memset(result, 0, 32);
+
+    // Skip any commas in the input (user-friendly format)
+    char clean[256];
+    int j = 0;
+    for (int i = 0; decimal[i] && j < 255; i++) {
+        if (decimal[i] >= '0' && decimal[i] <= '9') {
+            clean[j++] = decimal[i];
+        }
+    }
+    clean[j] = '\0';
+
+    // Process each digit: result = result * 10 + digit
+    for (int i = 0; clean[i]; i++) {
+        // Multiply by 10
+        __uint128_t carry = 0;
+        for (int k = 0; k < 4; k++) {
+            __uint128_t prod = (__uint128_t)result[k] * 10 + carry;
+            result[k] = (uint64_t)prod;
+            carry = prod >> 64;
+        }
+
+        // Add digit
+        int digit = clean[i] - '0';
+        carry = digit;
+        for (int k = 0; k < 4 && carry; k++) {
+            __uint128_t sum = (__uint128_t)result[k] + carry;
+            result[k] = (uint64_t)sum;
+            carry = sum >> 64;
+        }
+    }
+}
+
+// Add 256-bit integers: result = a + b, returns carry
+static uint64_t add256_val(uint64_t* r, const uint64_t* a, uint64_t b) {
+    __uint128_t carry = b;
+    for (int i = 0; i < 4; i++) {
+        carry += a[i];
+        r[i] = (uint64_t)carry;
+        carry >>= 64;
+    }
+    return (uint64_t)carry;
+}
+
 static void scalar_mult_G(uint64_t* rx, uint64_t* ry, const uint64_t* k) {
     uint64_t qx[4], qy[4];
     uint64_t tmpx[4], tmpy[4];
@@ -738,6 +785,57 @@ static void init_valid_keys_k3(uint64_t* h_keys_x, uint64_t* h_keys_y, int nbThr
     init_valid_keys_k3_range(h_keys_x, h_keys_y, nbThread, 0, 1);
 }
 
+// K3: Initialize keys from a specific decimal starting point
+// Each thread gets start + threadIndex as its private key
+static void init_keys_from_decimal_start(uint64_t* h_keys_x, uint64_t* h_keys_y, int nbThread,
+                                         const char* startDecimal) {
+    printf("K3: Generating %d EC starting points from decimal range...\n", nbThread);
+    printf("    Start: %s\n", startDecimal);
+
+    // Parse the decimal starting point
+    uint64_t baseKey[4];
+    decimal_to_256bit(startDecimal, baseKey);
+
+    printf("    Parsed as: 0x%016lx%016lx%016lx%016lx\n",
+           baseKey[3], baseKey[2], baseKey[1], baseKey[0]);
+
+    for (int t = 0; t < nbThread; t++) {
+        // Each thread gets baseKey + t
+        uint64_t privkey[4];
+        add256_val(privkey, baseKey, (uint64_t)t);
+
+        // Ensure non-zero (should never happen with our large starting values)
+        if ((privkey[0] | privkey[1] | privkey[2] | privkey[3]) == 0) {
+            privkey[0] = 1;
+        }
+
+        uint64_t px[4], py[4];
+        scalar_mult_G(px, py, privkey);
+
+        // K3: Store in coalesced layout [thread][component]
+        h_keys_x[t * 4 + 0] = px[0];
+        h_keys_x[t * 4 + 1] = px[1];
+        h_keys_x[t * 4 + 2] = px[2];
+        h_keys_x[t * 4 + 3] = px[3];
+
+        h_keys_y[t * 4 + 0] = py[0];
+        h_keys_y[t * 4 + 1] = py[1];
+        h_keys_y[t * 4 + 2] = py[2];
+        h_keys_y[t * 4 + 3] = py[3];
+
+        if ((t + 1) % 10000 == 0 || t == nbThread - 1) {
+            printf("\r    Generated %d/%d keys...", t + 1, nbThread);
+            fflush(stdout);
+        }
+    }
+    printf("\n    Done! Starting search from specified decimal range.\n");
+
+    // Print the last key generated to show the range covered
+    uint64_t lastKey[4];
+    add256_val(lastKey, baseKey, (uint64_t)(nbThread - 1));
+    printf("    Range covers: [start] to [start + %d]\n", nbThread - 1);
+}
+
 void save_state_k3(const char* f, uint64_t* kx, uint64_t* ky, int n, uint64_t t) {
     FILE* fp = fopen(f, "wb");
     if (fp) {
@@ -805,6 +903,7 @@ int main(int argc, char** argv) {
     int searchMode = MODE_BOTH;
     int rangeId = -1;      // -1 means auto (use gpuId)
     int totalRanges = 1;   // 1 means no partitioning
+    char* startDecimal = nullptr;  // Decimal starting point for key range
 
     // Parse arguments
     for (int i = 1; i < argc; i++) {
@@ -821,6 +920,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "-state") && i+1 < argc) stateFile = argv[++i];
         else if (!strcmp(argv[i], "-range") && i+1 < argc) rangeId = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-ranges") && i+1 < argc) totalRanges = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-start") && i+1 < argc) startDecimal = argv[++i];
         else if (!strcmp(argv[i], "-both")) searchMode = MODE_BOTH;
         else if (!strcmp(argv[i], "-compressed")) searchMode = MODE_COMPRESSED_ONLY;
         else if (!strcmp(argv[i], "-uncompressed")) searchMode = MODE_UNCOMPRESSED_ONLY;
@@ -852,7 +952,13 @@ int main(int argc, char** argv) {
         printf("  -uncompressed    Uncompressed only\n");
         printf("  -range <id>      Range partition ID (default: same as gpu)\n");
         printf("  -ranges <n>      Total number of range partitions (default: 1 = no partitioning)\n");
-        printf("\nRange Partitioning:\n");
+        printf("  -start <decimal> Exact decimal starting point for private key range\n");
+        printf("\nDecimal Starting Point:\n");
+        printf("  Use -start to specify an exact decimal value for the starting private key.\n");
+        printf("  Each GPU thread will search keys: start, start+1, start+2, etc.\n");
+        printf("  Commas in the number are ignored (e.g., 1,000,000 = 1000000).\n");
+        printf("  Example: ./BloomSearch32K3 ... -gpu 0 -start 82992563620862434352475351947757081565902246292157501334072464625845000000000\n");
+        printf("\nRange Partitioning (legacy):\n");
         printf("  Use -ranges 8 with 8 GPUs to ensure each GPU searches different key ranges.\n");
         printf("  Example: ./BloomSearch32K3 ... -gpu 0 -ranges 8\n");
         printf("           ./BloomSearch32K3 ... -gpu 1 -ranges 8\n");
@@ -974,6 +1080,10 @@ int main(int argc, char** argv) {
     uint64_t resumedKeys = load_state_k3(stateFile, h_keys_x, h_keys_y, nbThread);
     if (resumedKeys > 0) {
         printf("Resumed from checkpoint: %.2fB keys checked\n", resumedKeys / 1e9);
+    } else if (startDecimal != nullptr) {
+        // Use exact decimal starting point
+        init_keys_from_decimal_start(h_keys_x, h_keys_y, nbThread, startDecimal);
+        printf("Starting K3 search from EXACT DECIMAL starting point\n");
     } else {
         init_valid_keys_k3_range(h_keys_x, h_keys_y, nbThread, rangeId, totalRanges);
         printf("Starting fresh K3 search with %s EC points\n",
