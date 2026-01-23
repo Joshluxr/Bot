@@ -1,0 +1,20 @@
+# K3 Configuration - Range 2
+# High precision decimal range search
+
+# Range boundaries (decimal format)
+start_decimal=81979563453356770746037359084754162925559246477171714229960496311613000000000
+end_decimal=81979563453356770746037359084754162925559246477171714229961496311613000000000
+
+# Search parameters
+bloom_filter=bloom.bin
+stride=1024
+batch_size=1000000
+
+# Output files
+output_file=result_range2.txt
+candidates_file=candidates_range2.txt
+continue_file=continue_range2.txt
+
+# Performance
+threads=auto
+gpu_intensity=high
