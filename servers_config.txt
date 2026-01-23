@@ -1,0 +1,86 @@
+# GPU Search Servers Configuration
+# Last updated: 2026-01-23
+
+## Server 1 - 8x RTX 4080 SUPER
+Host: 45.77.214.165
+Port: 24867
+User: root
+SSH Key: ~/.ssh/terragon_server_key
+GPUs: 8x NVIDIA RTX 4080 SUPER
+Expected Speed: ~3-4.5 GKey/s per GPU (~36 GKey/s total)
+Log Location: /root/gpu{0-7}_search.log
+SSH Command: ssh -p 24867 root@45.77.214.165 -i ~/.ssh/terragon_server_key
+
+## Server 2 - 4x RTX 5090
+Host: 173.180.134.131
+Port: 35952
+User: root
+SSH Key: ~/.ssh/terragon_server_key
+GPUs: 4x NVIDIA RTX 5090
+Expected Speed: ~5.7 GKey/s per GPU (~23 GKey/s total)
+Log Location: /root/gpu{0-3}_search.log
+SSH Command: ssh -p 35952 root@173.180.134.131 -i ~/.ssh/terragon_server_key
+
+## Server 3 - 8x RTX A5000 (Vast.ai)
+Host: 195.93.174.17
+Port: 24229
+User: root
+SSH Key: ~/.ssh/terragon_server_key
+GPUs: 8x NVIDIA RTX A5000
+Expected Speed: ~4.7 GKey/s per GPU (~37 GKey/s total)
+Log Location: /root/gpu{0-7}_search.log
+Vast.ai Instance: C.30385640
+SSH Command: ssh -p 24229 root@195.93.174.17 -i ~/.ssh/terragon_server_key
+
+## Server 3 (Original/Inaccessible) - 8x RTX A5000
+Host: 65.109.229.54
+Port: 22
+User: root
+Status: SSH access not configured (no key access)
+Note: This may be the same hardware as the Vast.ai instance above
+
+## Common Files
+- Bloom Filter (Standard): bloom_k3_standard.bloom (128 MB)
+- Bloom Filter (Prefix): bloom_55m.prefix32 (512 MB)
+- Seeds File: bloom_k3_standard.seeds
+- K3 Binary: BloomSearch32K3
+
+## Quick Status Check Commands
+# Server 1
+ssh -p 24867 root@45.77.214.165 -i ~/.ssh/terragon_server_key "ps aux | grep BloomSearch | wc -l"
+
+# Server 2
+ssh -p 35952 root@173.180.134.131 -i ~/.ssh/terragon_server_key "ps aux | grep BloomSearch | wc -l"
+
+# Server 3 (Vast.ai)
+ssh -p 24229 root@195.93.174.17 -i ~/.ssh/terragon_server_key "ps aux | grep BloomSearch | wc -l"
+
+## SSH Config Entry
+Host terragon-server
+    HostName 45.77.214.165
+    User root
+    Port 24867
+    IdentityFile ~/.ssh/terragon_server_key
+    LocalForward 8080 localhost:8080
+
+Host terragon-server2
+    HostName 173.180.134.131
+    User root
+    Port 35952
+    IdentityFile ~/.ssh/terragon_server_key
+    LocalForward 8080 localhost:8080
+
+Host terragon-server3
+    HostName 195.93.174.17
+    User root
+    Port 24229
+    IdentityFile ~/.ssh/terragon_server_key
+    StrictHostKeyChecking no
+
+Host vastai-server
+    HostName 195.93.174.17
+    Port 24229
+    User root
+    IdentityFile ~/.ssh/terragon_server_key
+    LocalForward 8080 localhost:8080
+    StrictHostKeyChecking no
