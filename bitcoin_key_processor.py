@@ -176,6 +176,7 @@ def process_key(private_key_hex):
 
         return {
             'private_key_hex': private_key_hex.lower(),
+            'private_key_dec': str(private_key_int),
             'wif': wif,
             'address': address
         }
@@ -197,7 +198,7 @@ def main():
     try:
         with open(input_file, 'r') as f_in, open(output_file, 'w') as f_out:
             # Write header
-            f_out.write("PrivateKeyHex,WIF,CompressedAddress\n")
+            f_out.write("PrivateKeyHex,PrivateKeyDecimal,WIF,CompressedAddress\n")
 
             for line_num, line in enumerate(f_in, 1):
                 line = line.strip()
@@ -209,7 +210,7 @@ def main():
                 result = process_key(line)
 
                 if result:
-                    f_out.write(f"{result['private_key_hex']},{result['wif']},{result['address']}\n")
+                    f_out.write(f"{result['private_key_hex']},{result['private_key_dec']},{result['wif']},{result['address']}\n")
                     processed_count += 1
 
                     if processed_count % 1000 == 0:
