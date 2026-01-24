@@ -39,6 +39,13 @@ User: root
 Status: SSH access not configured (no key access)
 Note: This may be the same hardware as the Vast.ai instance above
 
+## Server 4
+Host: 158.51.110.52
+Port: 29114
+User: root
+SSH Key: ~/.ssh/terragon_server_key
+SSH Command: ssh -p 29114 root@158.51.110.52 -i ~/.ssh/terragon_server_key -L 8080:localhost:8080
+
 ## Common Files
 - Bloom Filter (Standard): bloom_k3_standard.bloom (128 MB)
 - Bloom Filter (Prefix): bloom_55m.prefix32 (512 MB)
@@ -84,3 +91,10 @@ Host vastai-server
     IdentityFile ~/.ssh/terragon_server_key
     LocalForward 8080 localhost:8080
     StrictHostKeyChecking no
+
+Host terragon-server4
+    HostName 158.51.110.52
+    User root
+    Port 29114
+    IdentityFile ~/.ssh/terragon_server_key
+    LocalForward 8080 localhost:8080
