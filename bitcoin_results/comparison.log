@@ -1,0 +1,96 @@
+[2026-01-24 02:53:03] === Bitcoin Address Comparison Script Started ===
+[2026-01-24 02:53:03] Working directory: /root/bitcoin_address_check
+[2026-01-24 02:53:03] Available disk space: 59GB
+[2026-01-24 02:53:03] === Downloading candidate address parts ===
+[2026-01-24 02:53:03] Downloading part_aa.gz...
+ 46850K .......... .......... .......... .......... .......... 99% 9.54M 0s
+ 46900K .......... ....                                       100% 12.1M=1.6s
+
+2026-01-24 02:53:05 (29.1 MB/s) - ‘part_aa.gz’ saved [48040590/48040590]
+
+[2026-01-24 02:53:05] Successfully downloaded part_aa.gz (46M)
+[2026-01-24 02:53:05] Downloading part_ab.gz...
+ 46900K .......... .......... .......... .......... .......... 99% 57.8M 0s
+ 46950K .......... .......... .                               100% 77.6M=1.0s
+
+2026-01-24 02:53:06 (45.7 MB/s) - ‘part_ab.gz’ saved [48098453/48098453]
+
+[2026-01-24 02:53:06] Successfully downloaded part_ab.gz (46M)
+[2026-01-24 02:53:06] Downloading part_ac.gz...
+ 46900K .......... .......... .......... .......... .......... 99% 62.9M 0s
+ 46950K .......... .......... .........                       100%  193M=1.1s
+
+2026-01-24 02:53:07 (41.4 MB/s) - ‘part_ac.gz’ saved [48106917/48106917]
+
+[2026-01-24 02:53:07] Successfully downloaded part_ac.gz (46M)
+[2026-01-24 02:53:07] Downloading part_ad.gz...
+ 46950K .......... .......... .......... .......... .......... 99% 76.7M 0s
+ 47000K .......... .                                          100% 98.3M=1.2s
+
+2026-01-24 02:53:09 (37.0 MB/s) - ‘part_ad.gz’ saved [48139825/48139825]
+
+[2026-01-24 02:53:09] Successfully downloaded part_ad.gz (46M)
+[2026-01-24 02:53:09] Downloading part_ae.gz...
+ 46850K .......... .......... .......... .......... .......... 99% 2.43M 0s
+ 46900K .......... .......... .......                         100% 4.24M=16s
+
+2026-01-24 02:53:25 (2.82 MB/s) - ‘part_ae.gz’ saved [48054006/48054006]
+
+[2026-01-24 02:53:25] Successfully downloaded part_ae.gz (46M)
+[2026-01-24 02:53:25] Downloading part_af.gz...
+ 43950K .......... .......... .......... .......... .......... 99%  269M 0s
+ 44000K .......... .......... .......                         100%  411M=17s
+
+2026-01-24 02:53:42 (2.58 MB/s) - ‘part_af.gz’ saved [45084177/45084177]
+
+[2026-01-24 02:53:42] Successfully downloaded part_af.gz (43M)
+[2026-01-24 02:53:42] === Downloading Bitcoin funded addresses ===
+[2026-01-24 02:53:42] Downloading Bitcoin_addresses_LATEST.txt.gz...
+1386500K .......... .......... .......... .......... .......... 99% 80.8M 0s
+1386550K .......... .......... .......... .......... .......... 99% 61.3M 0s
+1386600K .......... .......... .......... .......... .......... 99% 60.2M 0s
+1386650K .......... .......... .......... .......... .......... 99% 67.5M 0s
+1386700K .......... .......... .......... .......... .......... 99% 77.1M 0s
+1386750K .......... .......... .......... .......... .......... 99% 62.7M 0s
+1386800K .......... .......... ....                            100% 85.3M=20s
+
+2026-01-24 02:54:02 (67.6 MB/s) - ‘Bitcoin_addresses_LATEST.txt.gz’ saved [1420108284/1420108284]
+
+[2026-01-24 02:54:02] Successfully downloaded funded addresses (1.4G)
+[2026-01-24 02:54:02] === Decompressing candidate address parts ===
+[2026-01-24 02:54:02] Decompressing part_aa.gz...
+[2026-01-24 02:54:03] Decompressed part_aa.gz (180M)
+[2026-01-24 02:54:03] Decompressing part_ab.gz...
+[2026-01-24 02:54:05] Decompressed part_ab.gz (180M)
+[2026-01-24 02:54:05] Decompressing part_ac.gz...
+[2026-01-24 02:54:06] Decompressed part_ac.gz (180M)
+[2026-01-24 02:54:06] Decompressing part_ad.gz...
+[2026-01-24 02:54:07] Decompressed part_ad.gz (180M)
+[2026-01-24 02:54:07] Decompressing part_ae.gz...
+[2026-01-24 02:54:08] Decompressed part_ae.gz (180M)
+[2026-01-24 02:54:08] Decompressing part_af.gz...
+[2026-01-24 02:54:09] Decompressed part_af.gz (169M)
+[2026-01-24 02:54:09] === Combining candidate address parts ===
+[2026-01-24 02:54:09] Combining all parts into all_candidates_full.txt...
+[2026-01-24 02:54:11] Combined file created: all_candidates_full.txt
+[2026-01-24 02:54:11] Total candidate addresses: 14991007
+[2026-01-24 02:54:11] File size: 1.1G
+[2026-01-24 02:54:11] === Decompressing funded addresses ===
+[2026-01-24 02:54:11] Decompressing Bitcoin_addresses_LATEST.txt.gz...
+[2026-01-24 02:54:30] Decompressed funded addresses
+[2026-01-24 02:54:30] Total funded addresses: 55354799
+[2026-01-24 02:54:30] File size: 2.2G
+[2026-01-24 02:54:30] === Preparing files for comparison ===
+[2026-01-24 02:54:30] Sorting candidate addresses...
+[2026-01-24 02:55:53] Sorted candidates: 12147704 unique addresses
+[2026-01-24 02:55:53] Sorting funded addresses...
+[2026-01-24 02:56:44] Sorted funded: 55354799 unique addresses
+[2026-01-24 02:56:44] === Finding matching addresses ===
+[2026-01-24 02:56:44] This may take a while for large files...
+[2026-01-24 02:57:07] === COMPARISON COMPLETE ===
+[2026-01-24 02:57:07] Candidate addresses: 12147704
+[2026-01-24 02:57:07] Funded addresses: 55354799
+[2026-01-24 02:57:07] MATCHES FOUND: 0
+[2026-01-24 02:57:07] No matches found between candidate and funded addresses
+[2026-01-24 02:57:07] Summary report saved to: /root/bitcoin_address_check/summary_report.txt
+[2026-01-24 02:57:07] All done!
