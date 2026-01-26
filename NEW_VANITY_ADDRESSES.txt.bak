@@ -56,38 +56,3 @@ Interesting vanity patterns found:
 
 Note: These are bloom filter candidates. Check if any match your target list!
 
-
-================================================================================
-                    PROXIMITY ANALYSIS - CLUSTERING DISCOVERED
-================================================================================
-
-AMAZING DISCOVERY: Two 1Fee addresses are EXTREMELY close together!
-
-Cluster in keyspace at ~70.25%:
---------------------------------------------------------------------------------
-1. 1Feex1WaVrDaUALGdmZtysGHaoxDeuj4Hm
-   Key: b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a055b866201
-
-2. 1Fee3akRmUMnXJS794sK1BZWaoC8kWVR9x  
-   Key: b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a055c2155f6
-
-Distance: Only 10,154,997 keys apart! (0x9af3f5)
-
-These two addresses share the same prefix for 55 hex characters!
-Prefix: b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a055
-
-Isolated address (far away at 6.83%):
---------------------------------------------------------------------------------
-3. 1Fee4bHJdhByoMxxMjyew7yF9RAFKhdJqq
-   Key: 117a80fc9f3ea396e75da8633583519d999682043c6d89b2f267988dfe3277b3
-   Distance from cluster: 7.34e+76 keys away
-
-SIGNIFICANCE:
-This clustering suggests the GPU search found a "hot zone" with multiple
-1Fee addresses in a very narrow 10M key range. More addresses may exist
-in this region!
-
-Recommended search range for more 1Fee addresses:
-  From: b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a05500000000
-    To: b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a0560000000
-
