@@ -1,0 +1,162 @@
+================================================================================
+COMPREHENSIVE SERVER DATASETS ANALYSIS
+================================================================================
+
+Loading server datasets...
+Server 1: 115,441 unique addresses (2,975 duplicates)
+Server 2: 22,521 unique addresses (7,118 duplicates)
+Server 4: 33,954 unique addresses (1,255 duplicates)
+
+Combined total: 171,916 addresses
+
+================================================================================
+FUNDED ADDRESS CHECK
+================================================================================
+
+Checking against 55+ million funded addresses...
+  Progress: 1,000,000 / 55,370,071 (0 matches)
+  Progress: 2,000,000 / 55,370,071 (0 matches)
+  Progress: 3,000,000 / 55,370,071 (0 matches)
+  Progress: 4,000,000 / 55,370,071 (0 matches)
+  Progress: 5,000,000 / 55,370,071 (0 matches)
+  Progress: 6,000,000 / 55,370,071 (0 matches)
+  Progress: 7,000,000 / 55,370,071 (0 matches)
+  Progress: 8,000,000 / 55,370,071 (0 matches)
+  Progress: 9,000,000 / 55,370,071 (0 matches)
+  Progress: 10,000,000 / 55,370,071 (0 matches)
+  Progress: 11,000,000 / 55,370,071 (0 matches)
+  Progress: 12,000,000 / 55,370,071 (0 matches)
+  Progress: 13,000,000 / 55,370,071 (0 matches)
+  Progress: 14,000,000 / 55,370,071 (0 matches)
+  Progress: 15,000,000 / 55,370,071 (0 matches)
+  Progress: 16,000,000 / 55,370,071 (0 matches)
+  Progress: 17,000,000 / 55,370,071 (0 matches)
+  Progress: 18,000,000 / 55,370,071 (0 matches)
+  Progress: 19,000,000 / 55,370,071 (0 matches)
+  Progress: 20,000,000 / 55,370,071 (0 matches)
+  Progress: 21,000,000 / 55,370,071 (0 matches)
+  Progress: 22,000,000 / 55,370,071 (0 matches)
+  Progress: 23,000,000 / 55,370,071 (0 matches)
+  Progress: 24,000,000 / 55,370,071 (0 matches)
+  Progress: 25,000,000 / 55,370,071 (0 matches)
+  Progress: 26,000,000 / 55,370,071 (0 matches)
+  Progress: 27,000,000 / 55,370,071 (0 matches)
+  Progress: 28,000,000 / 55,370,071 (0 matches)
+  Progress: 29,000,000 / 55,370,071 (0 matches)
+  Progress: 30,000,000 / 55,370,071 (0 matches)
+  Progress: 31,000,000 / 55,370,071 (0 matches)
+  Progress: 32,000,000 / 55,370,071 (0 matches)
+  Progress: 33,000,000 / 55,370,071 (0 matches)
+  Progress: 34,000,000 / 55,370,071 (0 matches)
+  Progress: 35,000,000 / 55,370,071 (0 matches)
+  Progress: 36,000,000 / 55,370,071 (0 matches)
+  Progress: 37,000,000 / 55,370,071 (0 matches)
+  Progress: 38,000,000 / 55,370,071 (0 matches)
+  Progress: 39,000,000 / 55,370,071 (0 matches)
+  Progress: 40,000,000 / 55,370,071 (0 matches)
+  Progress: 41,000,000 / 55,370,071 (0 matches)
+  Progress: 42,000,000 / 55,370,071 (0 matches)
+  Progress: 43,000,000 / 55,370,071 (0 matches)
+  Progress: 44,000,000 / 55,370,071 (0 matches)
+  Progress: 45,000,000 / 55,370,071 (0 matches)
+  Progress: 46,000,000 / 55,370,071 (0 matches)
+  Progress: 47,000,000 / 55,370,071 (0 matches)
+  Progress: 48,000,000 / 55,370,071 (0 matches)
+  Progress: 49,000,000 / 55,370,071 (0 matches)
+  Progress: 50,000,000 / 55,370,071 (0 matches)
+  Progress: 51,000,000 / 55,370,071 (0 matches)
+  Progress: 52,000,000 / 55,370,071 (0 matches)
+  Progress: 53,000,000 / 55,370,071 (0 matches)
+  Progress: 54,000,000 / 55,370,071 (0 matches)
+  Progress: 55,000,000 / 55,370,071 (0 matches)
+
+Result: 0 funded address(es) found
+✅ No funded addresses found - all addresses have zero balance
+
+================================================================================
+RICH WALLET SIMILARITIES
+================================================================================
+
+5-character matches: 3
+4-character matches: 16
+
+5-Character Matches (Very Rare):
+  1CY7fNnWkmJtpt4TBS84cuFKwQjbPsL3R9 → Prefix: 1CY7f (Server: Server 1 (8x 4080S))
+  1MewpNgZKvUP9mMjyPbjAtbrm2H4g57LBK → Prefix: 1Mewp (Server: Server 1 (8x 4080S))
+  1Q8QRwEVq7XutqcVuPW7twrpC7HvFhxnHM → Prefix: 1Q8QR (Server: Server 1 (8x 4080S))
+
+4-Character Matches (showing first 10):
+  12c6HbyGbbpfELRqrMyrmjiS59CqqPaw6R → Prefix: 12c6 (Server: Server 1 (8x 4080S))
+  12c6ejYfhAJRugpsyWhQzHo69jzAPsCQBj → Prefix: 12c6 (Server: Server 1 (8x 4080S))
+  12c6oM2CCDgyGCH3SR9VFg4bRJHtHL5a5f → Prefix: 12c6 (Server: Server 1 (8x 4080S))
+  1A1z244TJRj6W1bgaedcJ6J517emToLqmc → Prefix: 1A1z (Server: Server 1 (8x 4080S))
+  1CY7fNnWkmJtpt4TBS84cuFKwQjbPsL3R9 → Prefix: 1CY7 (Server: Server 1 (8x 4080S))
+  1MewpNgZKvUP9mMjyPbjAtbrm2H4g57LBK → Prefix: 1Mewp (Server: Server 1 (8x 4080S))
+  1Q8QGyYh2QQAhdM3cx7JR8VGZeWUWmAxdo → Prefix: 1Q8Q (Server: Server 1 (8x 4080S))
+  1Q8QRwEVq7XutqcVuPW7twrpC7HvFhxnHM → Prefix: 1Q8Q (Server: Server 1 (8x 4080S))
+  1Q8QXnubcXoZoAw5Ci4C8EtWDsKK8874Hn → Prefix: 1Q8Q (Server: Server 1 (8x 4080S))
+  1FeeCUzG24PSEuguDWE61XqhVw3tmzKEib → Prefix: 1Fee (Server: Server 2 (4x 5090))
+
+================================================================================
+VANITY PATTERN ANALYSIS
+================================================================================
+
+Vanity patterns found: 11
+
+1ABC: 4 address(es)
+  1ABC2HnXmwdNtGEkpXAvEhTecgcRCKJxTq (Server: Server 1 (8x 4080S))
+  1ABCZ215ZYmqJUV4BiiVf9BjAZ372Z8vBE (Server: Server 1 (8x 4080S))
+  1ABCHeJusMNht4ysB6JQH5RJm1aE7LrFPh (Server: Server 2 (4x 5090))
+1Key: 4 address(es)
+  1Keyxnr4cSfNjijFuQiSbED5ypgVWHFgp3 (Server: Server 1 (8x 4080S))
+  1Key3ZRsdp6SLbM1tj2Uju6xhw1wa7e22h (Server: Server 2 (4x 5090))
+  1KeyB6fmDiisyB28RR6ot2SkA5Sk8Gq269 (Server: Server 2 (4x 5090))
+1Hot: 3 address(es)
+  1HotL4ShHrMSsaKdnndaK5L9fzhtwGjHgP (Server: Server 1 (8x 4080S))
+  1HotSK53abrQjHTDEQQ4E77JKMLtYRjdcE (Server: Server 1 (8x 4080S))
+  1HotjiUQRPiXoUQCcTmbWLjfiM3ZEt3U8Z (Server: Server 1 (8x 4080S))
+1Fee: 2 address(es)
+  1FeeCUzG24PSEuguDWE61XqhVw3tmzKEib (Server: Server 2 (4x 5090))
+  1FeefVd8NGYCwxh9a5fAjxAJb9zaB7yczC (Server: Server 4 (4x 5090))
+1Gun: 2 address(es)
+  1GunV8zXDyypo6p14VFpXPzLZ6xg7cF26J (Server: Server 1 (8x 4080S))
+  1GunSss63fEcTc7yvxBV7GeFXeBB2uvj4 (Server: Server 2 (4x 5090))
+1111: 2 address(es)
+  1111fZkz4nR5KDw1CFjMYH42YkJ5NaBn (Server: Server 1 (8x 4080S))
+  1111CeycppWGSfKZn2ythuSSszBgfEMcY (Server: Server 1 (8x 4080S))
+1Big: 2 address(es)
+  1BigY4sN2uGW1zywBQ6ScPc35ootYJV7qi (Server: Server 1 (8x 4080S))
+  1BigQC7fT54ptYUJ7mn9deiPWjb1RF2t2H (Server: Server 2 (4x 5090))
+1BTC: 1 address(es)
+  1BTCuLNtmPwxPzfp9CnySMSNr39AJzYEnb (Server: Server 1 (8x 4080S))
+1Eve: 1 address(es)
+  1EveWLWLWH6dVtqw1fKaYj472mSzroRzkF (Server: Server 1 (8x 4080S))
+1Bob: 1 address(es)
+  1BobSAtq7ro4a6phRL37VUkCSA7vUefJfF (Server: Server 1 (8x 4080S))
+1Mike: 1 address(es)
+  1MikeedAWT2Z2xnvLDmYdrhDAJ91XvoMP4 (Server: Server 4 (4x 5090))
+
+================================================================================
+SAVING RESULTS
+================================================================================
+
+Saved 19 rich wallet similar addresses
+Saved 23 vanity addresses
+
+================================================================================
+SUMMARY STATISTICS
+================================================================================
+
+Total addresses analyzed: 171,916
+Funded matches: 0
+Rich wallet 5-char matches: 3
+Rich wallet 4-char matches: 16
+Vanity patterns found: 11
+Total vanity addresses: 23
+
+Server Breakdown:
+  Server 1 (8x 4080S): 115,441 addresses
+  Server 2 (4x 5090): 22,521 addresses
+  Server 4 (4x 5090): 33,954 addresses
+
+Analysis complete!
