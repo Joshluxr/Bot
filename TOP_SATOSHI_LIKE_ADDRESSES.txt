@@ -1,0 +1,157 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║              TOP SATOSHI-LIKE BITCOIN ADDRESSES DISCOVERED                   ║
+║                   Bitcoin Keyspace Exploration Project                       ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Generated: 2026-01-26
+Total Found: 455 Satoshi-like addresses
+Balance: 0 BTC (all addresses unfunded)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🏆 MOST NOTABLE DISCOVERIES
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. GENESIS BLOCK PATTERN: 1A1zP1... (Satoshi's First Address)
+   
+   Real:      1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa (Genesis Block, Jan 3, 2009)
+   Generated: 1A1KzRnFJwqPgABWtPoTjaHhry9hm58A3
+   WIF:       5Ja6tLEpBkStGonxwPLQW1679zVAkpp6f8CY1CdMT9LNfm2p2bA
+   Balance:   0 BTC
+   
+   Match: ██████░░░░ (3/5 prefix chars match)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2. EARLY MINING PATTERN: 12c6DSi... (Early Bitcoin Era)
+   
+   Real:      12c6DSiU4Rq3P4ZxziKxzrL5LmMBrzjrJX (Early Mining, 2009)
+   Generated: 12c6ejYfhAJRugpsyWhQzHo69jzAPsCQBj
+   WIF:       5J4tgZiL7ZCHbcBqfvk4thXTCQ3fj2r62v7N9rEwyX6eKJT7k5A
+   Balance:   0 BTC
+   
+   Match: ████████░░ (4/5 prefix chars match)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3. 66 BTC PUZZLE PATTERN: 1FeexV... (Famous Puzzle Address)
+   
+   Real:      1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF (66 BTC Puzzle)
+   Generated: 1FeQMzxNF98cwggfttxPWDkTw6ma1eGcQ
+   WIF:       5Ja6tLEpBkStGonxwPLQW1679zVAkpp6f8CY1CdMT6xGUzDRfnX
+   Balance:   0 BTC
+   
+   Match: ████░░░░░░ (2/5 prefix chars match)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4. BITCOIN VANITY: 1Bit... & 1Bitc... (Direct Bitcoin Reference)
+   
+   Generated: 1Bit38r5xeFm7Fn7uEiMxtxoCbxgqfae1L
+   WIF:       5JQN9k4eq22giQbFrEUHxuEZAo1LQtpm7iqUikVtHMpuDX4HbeQ
+   Balance:   0 BTC
+   
+   Generated: 1BitcTghGv81Cxv6Pf2VTFJPLrBKQeCfyW
+   WIF:       5Ja6tLEpBkStGonxwPLQW1679zVAkpp6f8CY1CdMT7VMf3XzXkC
+   Balance:   0 BTC
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 PATTERN DISTRIBUTION
+
+  Pattern   | Count | Description
+  ──────────|─────--|────────────────────────────────────────────
+  12c       |   99  | Early Bitcoin mining addresses (12c6DSi...)
+  1PS       |   96  | Bitcoin puzzle patterns (1PSSGe...)
+  1Fe       |   92  | 66 BTC puzzle pattern (1FeexV...)
+  1A1       |   83  | Genesis block pattern (1A1zP1...)
+  1HL       |   83  | Early address pattern (1HLoD9...)
+  1Bit      |    2  | Bitcoin vanity addresses
+  ──────────|─────--|────────────────────────────────────────────
+  TOTAL     |  455  | Satoshi-like addresses found
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 TOP 10 GENESIS-LIKE ADDRESSES (1A1...)
+
+1. 1A1KzRnFJwqPgABWtPoTjaHhry9hm58A3
+2. 1A1NB3Usk5QCDUVxqzzQ69hEaYeszdsfX
+3. 1A1mYLfbYa4QxnsmL44MWdYqcdoju4R4q
+4. 1A11oJx5ovJXayYyJJUFGPyMgbwNeJkKBW
+5. 1A11w2yd2HztevVJMS2HSChYajShsKATTF
+6. 1A1gveqxTv1yTPY2a8F9nhuZfzetbBZLTJ
+7. 1A1MQNh7FVghksW7rWB4KeYhmE4jaZNG3G
+8. 1A1g5GT2hqeHuZR8PFoxX1zqbfW3rXU8yG
+9. 1A1dWVsVpraNV9eTgwR3EqEm1t5Nzxrdqi
+10. 1A1BQgoE3zMAH16KvdSQShq5DeSQLS9aNF
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 TOP 10 EARLY MINING ADDRESSES (12c...)
+
+1. 12c1XFRngnju8PUkEZUpKPrnZdf9Dv3Gud
+2. 12c1gYkthEjgF1cQPRVEd5oUfExDxfnr2N
+3. 12c2W4cicYmfpzTZvBLXRusB4PkW9cFs3P
+4. 12c6ejYfhAJRugpsyWhQzHo69jzAPsCQBj ⭐ CLOSEST MATCH
+5. 12ciNdQN8mbssUbjrmTT4k85ZUZKqU2fij
+6. 12c3wzNGGv1bikupsHs6kQNa7PEFzn8gGH
+7. 12cacwttH1zyFtvQDpAcuhVMR4APcqKAmQ
+8. 12cqh9gkqRLpPryKUJkBd8NQLzNi2LB6Lr
+9. 12cGR81HCENKD7RaL6UxmdQCL3GHcRXNWv
+10. 12cfDr4stM73NQuFyomuUemdhVmmhFiMfM
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 TOP 10 PUZZLE ADDRESSES (1Fe...)
+
+1. 1FeQMzxNF98cwggfttxPWDkTw6ma1eGcQ ⭐ MATCHES 66 BTC PUZZLE PREFIX
+2. 1Fe1HdiJi76UevxZkvxWxvd3Z9U2mEwayy
+3. 1Fe2QM9BKiC4RedGUnC2NYFZeciZsR49MN
+4. 1Fe2vsgGvUVTKoVxct7LB4rmm44oPPxtVU
+5. 1Fe4B3CNUhjX49GUvDU5emSpvfSaicUCsu
+6. 1Fe59nJwUWemoQMjzy5MUdx8SG9ZEJLaAn
+7. 1FekZkYuf44ZLtMFcTDX4GkRcs2EJoiWtg
+8. 1FeNWcXRpPDjrDwR3RC3Nh1xajeSodtGZu
+9. 1FecXmuJY56kQqqV2qRzGbUjN7nP2HvT9n
+10. 1FeX7tdZMGjTc1iMHLmcZgs3UbhAV8moXe
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚠️  SECURITY NOTE
+
+All addresses found have ZERO balance. Prefix similarity does NOT compromise
+Bitcoin security. The full address space is 2^256, and matching a few prefix
+characters provides no meaningful cryptographic advantage.
+
+These discoveries demonstrate:
+✓ The vastness of Bitcoin's keyspace
+✓ The strength of ECDSA + SHA-256 cryptography
+✓ The rarity of vanity-like patterns in systematic exploration
+✓ The improbability of collision attacks
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📁 FILES GENERATED
+
+1. satoshi_like_addresses_detailed.csv - Full dataset (455 addresses)
+2. SATOSHI_LIKE_ADDRESSES_REPORT.md - Comprehensive analysis report
+3. TOP_SATOSHI_LIKE_ADDRESSES.txt - This quick reference file
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔬 RESEARCH CONTEXT
+
+This analysis is part of the Bitcoin Keyspace Exploration Project, a systematic
+study of Bitcoin address generation through decimal keyspace exploration.
+
+Dataset analyzed: 134,036 addresses
+Method: Decimal-based key generation (10^72 range)
+Result: 455 Satoshi-like prefixes (0.34% of total)
+Funded addresses: 0 (none discovered)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Report generated by Terragon Labs Research Division
+Bitcoin Keyspace Exploration Project | 2026-01-26
+
