@@ -1,0 +1,47 @@
+TEMPORARY FILES CLEANUP COMPLETE
+================================
+
+KEPT FILES (157 MB):
+-------------------
+✓ /tmp/candidates_final_verified.txt.gz        40M   FINAL VERIFIED OUTPUT
+✓ /tmp/candidates_with_addresses_v2.txt       117M   UNCOMPRESSED VERSION
+
+DELETED FILES (~1.35 GB freed):
+-------------------------------
+✗ All intermediate hash160 files                ~98M
+✗ All intermediate pair files                  ~150M
+✗ All old combined files                       ~347M
+✗ All archived versions                        ~456M
+✗ All server-specific intermediate files       ~157M
+✗ Empty candidate files                           0
+
+OLD DATA DIRECTORY (kept separately):
+------------------------------------
+/tmp/candidates/                              1.3G   (Previous extraction data)
+  - Contains old CSV format candidates
+  - Contains special address collections (1a1z, 1fee)
+  - Can be archived or deleted separately if no longer needed
+
+CURRENT FILES IN /root/repo/:
+-----------------------------
+✓ candidates_final_verified.txt.gz             40M   FINAL OUTPUT
+✓ CANDIDATES_SUMMARY.md                         5K   DOCUMENTATION
+✓ SAMPLE_CANDIDATES.txt                         8K   SAMPLE DATA
+
+SPACE SUMMARY:
+-------------
+Before cleanup: ~3.0 GB in /tmp/
+After cleanup:  ~1.5 GB in /tmp/
+Space freed:    ~1.5 GB
+  - Current candidates (new): 157 MB
+  - Old candidates directory: 1.3 GB (can be removed)
+  - Repo files: 40 MB
+
+RECOMMENDATION:
+--------------
+The /tmp/candidates/ directory (1.3GB) contains old extraction data from
+previous sessions. If you no longer need this old data, you can remove it:
+
+  rm -rf /tmp/candidates/
+
+This would free an additional 1.3 GB of space.
