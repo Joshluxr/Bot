@@ -98,3 +98,11 @@ Host terragon-server4
     Port 29114
     IdentityFile ~/.ssh/terragon_server_key
     LocalForward 8080 localhost:8080
+
+## Server 5 - 8x RTX 4090
+Host: 149.143.16.148
+Port: 12909
+User: root
+SSH Key: ~/.ssh/terragon_server_key
+GPUs: 8x NVIDIA RTX 4090
+SSH Command: ssh -p 12909 root@149.143.16.148 -i ~/.ssh/terragon_server_key -o StrictHostKeyChecking=no
