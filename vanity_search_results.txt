@@ -1,0 +1,93 @@
+================================================================================
+VANITY PREFIX SEARCH - ALL DATASETS
+================================================================================
+
+Loading datasets...
+Dataset 1 (final_complete.csv): 165,356 addresses
+Dataset 2 (all_candidates_final.txt): 146,668 addresses
+Combined total: 312,024 addresses
+
+Searching for vanity patterns...
+
+================================================================================
+VANITY PREFIX RESULTS
+================================================================================
+
+1Eve: 5 address(es)
+1Fee: 4 address(es)
+1Hot: 4 address(es)
+1111: 4 address(es)
+1ABC: 4 address(es)
+1Key: 4 address(es)
+1Gun: 3 address(es)
+1Big: 3 address(es)
+1Bob: 2 address(es)
+1Nak: 2 address(es)
+1Mike: 1 address(es)
+1BTC: 1 address(es)
+1234: 1 address(es)
+
+Total vanity patterns found: 13
+
+================================================================================
+DETAILED RESULTS FOR KEY PATTERNS
+================================================================================
+
+
+1Fee (4 found):
+------------------------------------------------------------
+  1FeeBuWDbZ1ke7v1ZRMjNZGYWkagB6bBpH
+  Key: 5JeyFdKts7ez41PpUxmTmZ1t9bE5vnomRpt4eRh61eyPAUWnkmn
+
+  1Feev67GRysi53ZwDjvPEf1UYD8xbyhgS6
+  Key: 5Ja6tLEpBkStGonxwPLQW1679zVAkpp6f8CY1CdMT4e3zXEuRYd
+
+  1FeeCUzG24PSEuguDWE61XqhVw3tmzKEib
+  Key: 5KBVNusnnAyijeJu76GSYUDbfmRruXGhJmoEWuQiJn6zpCs9F9h
+
+  1FeefVd8NGYCwxh9a5fAjxAJb9zaB7yczC
+  Key: 5KkCm7b3zbYVH1ALbX4C8i24u9uDKM6WxBs7t34h2UA7L4VnxrP
+
+
+1Gun (3 found):
+------------------------------------------------------------
+  1GunV8zXDyypo6p14VFpXPzLZ6xg7cF26J
+  Key: 5JEdR9tVUHcVA1PYm5cBRoP1BbXW4xqRaKURSJNR8YMihjxHye3
+
+  1GunSss63fEcTc7yvxBV7GeFXeBB2uvj4
+  Key: 5KBVNusnnAyijeJu76GSYUDbfmRruXGhJmoHZ6peqL3HEanQd1B
+
+  1GunV8zXDyypo6p14VFpXPzLZ6xg7cF26J
+  Key: 5JEdR9tVUHcVA1PYm5cBRoP1BbXW4xqRaKURSJNR8YMihjxHye3
+
+
+1Nak (2 found):
+------------------------------------------------------------
+  1NakKibuLs8C4NJBQWF2ak6GPeXVsQjfUF
+  Key: 5Ja6tLEpBkStGonxwPLQW1679zVAkpp6f8CY1CdMTZna3L7E6ch
+
+  1NakPPKvZZYHaA2cmJgifB6Qvsy4z2CyrU
+  Key: 5Ja6tLEpBkStGonxwPLQW1679zVAkpp6f8CY1CdMTW8u9mbB1Ep
+
+
+1BTC (1 found):
+------------------------------------------------------------
+  1BTCuLNtmPwxPzfp9CnySMSNr39AJzYEnb
+  Key: 5KABTPrNwJuajCzwkRMoNraY7Bfaxamn42yEVn5VV2xYMT84PNy
+
+================================================================================
+SAVING RESULTS
+================================================================================
+
+Saved 38 vanity addresses to 'all_vanity_addresses.csv'
+
+================================================================================
+SUMMARY STATISTICS
+================================================================================
+
+Total addresses searched: 312,024
+Vanity patterns detected: 13
+Total vanity addresses: 38
+Percentage with vanity: 0.012%
+
+Analysis complete!
