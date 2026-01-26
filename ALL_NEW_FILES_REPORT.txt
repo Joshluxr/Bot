@@ -1,0 +1,78 @@
+
+================================================================================
+NEW CANDIDATE FILES - COMPREHENSIVE ANALYSIS REPORT
+================================================================================
+Generated: 2026-01-26 13:26:27
+
+INPUT FILES
+================================================================================
+  • server1_new        8,113 addresses (source: tmpfiles.org/dl/21298764)
+  • server2_new       58,193 addresses (source: tmpfiles.org/dl/21300385)
+  • server4_new       72,724 addresses (source: tmpfiles.org/dl/21300381)
+
+  • Total Unique:     139,030 addresses
+
+FUNDED ADDRESS MATCHING
+================================================================================
+Database checked:     55,401,177 funded Bitcoin addresses
+New addresses:        139,030
+FUNDED MATCHES:       0
+
+No funded matches found. This is expected for random address generation
+where the probability of finding a funded address is astronomically low.
+
+INTERESTING PATTERNS FOUND
+================================================================================
+  • all_upper_7                  425 addresses
+  • alternating                  211 addresses
+  • all_upper_8                  183 addresses
+  • all_lower_7                   20 addresses
+  • btc_prefix                    11 addresses
+  • fee_prefix                     7 addresses
+  • sequential_789                 6 addresses
+  • bit_prefix                     3 addresses
+  • sequential_567                 3 addresses
+  • sequential_456                 3 addresses
+  • sequential_345                 3 addresses
+  • sequential_123                 1 addresses
+  • quad_1s                        1 addresses
+  • contains_rich                  1 addresses
+  • quad_7s                        1 addresses
+  • repeated_char                  1 addresses
+
+
+PREMIUM VANITY ADDRESSES
+================================================================================
+
+FEE PREFIX (7 found):
+  1FEE9huWihg1djXubL3DkMsuK6efTT6U2D
+  1FEEBGFyVmNp6omgaYVXTYz4ANzCcvP7DE
+  1FEe9uCa5scs4mifgkcrZk51vNDYqD5vKM
+  1FEezQ4PHNcHBg4AAZE38HxyDwo6C3tRYA
+  1Fee1HegbQQhEzftvQ62NjCBWGq6A8hMUy
+  1FeeCUzG24PSEuguDWE61XqhVw3tmzKEib
+  1FeefVd8NGYCwxh9a5fAjxAJb9zaB7yczC
+
+BTC PREFIX (11 found):
+  1BTCD7bRTkAAEYbPkeDf18tP8MoT9iwAfP
+  1BTCFc6H8txrWmokM17mNiLhk1zParh5pH
+  1BTCaDwaAcoH9kBLvpjJM2DYU38bjz2Hy1
+  1BTcPUy3jXa5ejudZ4eBVDyFgVnw6oyaKo
+  1BtC1CSHDhdAtZJEjM6YnVrknAsyXwy4SU
+  1BtCGrXqxop4P6HpSsrmpzEM75HhCDwpx8
+  1BtCTNyu2krH6AKWKxadktXdhWDKSEq7ZK
+  1BtCVW4bBCrH3R3VxkuZhvrYkAvW67bJmn
+  1BtCfKzmNnFVEsaQp6iY3PVBR7ftV9jH2Z
+  1Btc4kJw2ppQba5o7swKezgYwGsK2FU3Ye
+  1BtcTNrS8CMzacbNksyWM9UJWTmM1fG5Ba
+
+
+================================================================================
+SUMMARY
+================================================================================
+Total new addresses analyzed: 139,030
+Interesting patterns:         696
+Funded matches:               0
+
+Report saved: /root/repo/ALL_NEW_FILES_REPORT.txt
+================================================================================
