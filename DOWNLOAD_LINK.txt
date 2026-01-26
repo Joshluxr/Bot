@@ -1,0 +1,20 @@
+DOWNLOAD LINK FOR CANDIDATES FILE
+==================================
+
+Download URL:
+https://tmpfiles.org/dl/21346897/candidates_final_verified.zip
+
+File Details:
+- Size: 40 MB (compressed)
+- Uncompressed: 117 MB
+- Total Entries: 1,223,334 verified address-key pairs
+- Format: Plain text, one entry per line
+- Structure: [BITCOIN_ADDRESS] [PRIVATE_KEY_HEX]
+
+Download Command:
+curl -L https://tmpfiles.org/dl/21346897/candidates_final_verified.zip -o candidates_final_verified.txt.gz
+
+Extract Command:
+gunzip candidates_final_verified.txt.gz
+
+Note: Despite the .zip extension, this is a gzip-compressed text file.

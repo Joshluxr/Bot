@@ -1,0 +1,93 @@
+# Interesting Vanity Addresses in NEW Candidates (130,774 entries)
+# Date: 2026-01-26
+
+================================================================================
+                              1Fee PREFIX (3 found)
+================================================================================
+
+1Feex1WaVrDaUALGdmZtysGHaoxDeuj4Hm b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a055b866201
+1Fee3akRmUMnXJS794sK1BZWaoC8kWVR9x b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a055c2155f6
+1Fee4bHJdhByoMxxMjyew7yF9RAFKhdJqq 117a80fc9f3ea396e75da8633583519d999682043c6d89b2f267988dfe3277b3
+
+================================================================================
+                              1BTC PREFIX (2 found)
+================================================================================
+
+1BTCqkuTa4waBc7SyaFUt9geewr8oT7n6u b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc31931a6e73202a8f
+1BTC6CyrDkhEjrH3b5MoV83kwbnZHo5QMJ 7b46faac2f282e4494886e9b56dc45d366a87435038ff9f33ffd2e12148ac94b
+
+================================================================================
+                              111 PREFIX (1 found)
+================================================================================
+
+111H4oegfj4UM66PWaDB1CdJLzbepXhpe a3f1d49577f5dcc346003ca36431012e8dc177addb5a34740b3ef778bbabe228
+
+================================================================================
+                      REPEATING ENDING PATTERNS (5 examples)
+================================================================================
+
+Ending with bbbb:
+1F5YxWKsd2Kmjziw4tkFNvpg92BbxcNZrM b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2c06048cfd2bbbbb
+
+Ending with 5555:
+18Kb56bpRrmHJygUxJz4pUHYbQXuHPHgBb b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc31931a6e73105555
+
+Ending with 1111:
+1EY3q1abnzAygAgFBd2mJXYRy7cyCJxpge b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2c06048cfc561111
+
+Ending with 4444:
+1G54mNzz7u6SptfdBG229Mu28y1wvZc7FC b53ec9e1eb29d0402eb35a46ef505ad012ce27c03d02ac9d6da6f4271bbe4444
+
+Ending with 6666:
+1KDWtbiiNLQsHp4aR6S1DLYLSVNXh8tYmY b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2c06048cfc8e6666
+
+================================================================================
+                              SUMMARY
+================================================================================
+
+Total NEW candidates scanned: 130,774
+Interesting vanity patterns found:
+  - 1Fee prefix: 3 addresses
+  - 1BTC prefix: 2 addresses
+  - 111 prefix: 1 address
+  - Repeating endings: Multiple (examples shown above)
+  - 1Love prefix: 0
+  - 1Bitcoin prefix: 0
+
+Note: These are bloom filter candidates. Check if any match your target list!
+
+
+================================================================================
+                    PROXIMITY ANALYSIS - CLUSTERING DISCOVERED
+================================================================================
+
+AMAZING DISCOVERY: Two 1Fee addresses are EXTREMELY close together!
+
+Cluster in keyspace at ~70.25%:
+--------------------------------------------------------------------------------
+1. 1Feex1WaVrDaUALGdmZtysGHaoxDeuj4Hm
+   Key: b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a055b866201
+
+2. 1Fee3akRmUMnXJS794sK1BZWaoC8kWVR9x  
+   Key: b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a055c2155f6
+
+Distance: Only 10,154,997 keys apart! (0x9af3f5)
+
+These two addresses share the same prefix for 55 hex characters!
+Prefix: b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a055
+
+Isolated address (far away at 6.83%):
+--------------------------------------------------------------------------------
+3. 1Fee4bHJdhByoMxxMjyew7yF9RAFKhdJqq
+   Key: 117a80fc9f3ea396e75da8633583519d999682043c6d89b2f267988dfe3277b3
+   Distance from cluster: 7.34e+76 keys away
+
+SIGNIFICANCE:
+This clustering suggests the GPU search found a "hot zone" with multiple
+1Fee addresses in a very narrow 10M key range. More addresses may exist
+in this region!
+
+Recommended search range for more 1Fee addresses:
+  From: b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a05500000000
+    To: b3d74c168e3eca3a299d699924449b6ed5fb1fd38ce9a7bc2d694a0560000000
+
