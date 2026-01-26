@@ -1,0 +1,74 @@
+================================================================================
+✅ SERVER 2: ALL 4 RANGES DEPLOYED & RUNNING WITH CORRECT CONFIGURATION
+================================================================================
+
+COMPLETED ACTIONS:
+-----------------
+1. ✅ Backed up Server 2's original search state (129MB with all state files)
+2. ✅ Identified correct EC point configuration from Server 1
+3. ✅ Modified BloomSearch32K3 source code on Server 2
+4. ✅ Recompiled with correct settings
+5. ✅ Deployed all 4 new ranges
+6. ✅ All 4 ranges running and generating EC points
+
+CONFIGURATION FIXED:
+-------------------
+OLD: 1024 blocks x 512 threads = 524,288 EC points (TOO SLOW)
+NEW: 256 blocks x 256 threads = 65,536 EC points (CORRECT - matches Server 1)
+
+THE 4 RUNNING RANGES:
+--------------------
+Range 1 (GPU 0): 11494219353108143562991068411194509532350831987680500254629221556744305000000000
+Range 2 (GPU 1): 11494219353108143562991068411194509532350831987680500254629221506744305000000000
+Range 3 (GPU 2): 81979563453356770746037359084754162925559246477171714229961496311613000000000
+Range 4 (GPU 3): 81979563453356770746037359084754162925559246477171714229960496311613000000000
+
+CURRENT STATUS:
+--------------
+✅ All 4 processes running
+✅ EC point generation in progress (50,000+ of 65,536)
+✅ Will begin searching automatically when generation completes
+
+MONITORING COMMANDS:
+-------------------
+# View all ranges simultaneously
+ssh terragon-server2 'tail -f /root/range*_search.log'
+
+# View individual range
+ssh terragon-server2 'tail -f /root/range1_search.log'
+
+# Check processes
+ssh terragon-server2 'ps aux | grep BloomSearch32K3 | grep -v grep'
+
+# Check for matches
+ssh terragon-server2 'grep -i "match\|found" /root/range*_search.log'
+
+EXPECTED PERFORMANCE:
+--------------------
+Each GPU: ~5-6 GKey/s
+Total: ~20-24 GKey/s across all 4 GPUs
+(RTX 5090 GPUs on Server 2)
+
+BACKUP LOCATION:
+---------------
+Local: /root/repo/server2_backups/K3_backup_original_20260123_223401
+Remote: ~/K3_backup_original_20260123_223401 on Server 2
+
+RESUME ORIGINAL SEARCH:
+----------------------
+ssh terragon-server2 'pkill -f BloomSearch32K3'
+ssh terragon-server2 'cp ~/K3_backup_original_*/gpu*.state /tmp/'
+ssh terragon-server2 './launch_k3_4gpu.sh'
+
+FILES CREATED:
+-------------
+✅ Modified source: /workspace/k3/src/BloomSearch32K3.cu
+✅ Recompiled binary: /workspace/k3/BloomSearch32K3 (626KB)
+✅ Launch scripts: ~/launch_range1-4.sh, ~/launch_all_4_ranges.sh
+✅ Log files: /root/range1-4_search.log
+✅ State files: /tmp/range1-4.state (auto-created during search)
+
+================================================================================
+All 4 ranges are running with the correct 65,536 EC point configuration!
+EC point generation is ~76% complete. Search will begin automatically.
+================================================================================
