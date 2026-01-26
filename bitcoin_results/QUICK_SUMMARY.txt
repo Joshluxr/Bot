@@ -1,0 +1,66 @@
+================================================================================
+BITCOIN ADDRESS COMPARISON - QUICK SUMMARY
+================================================================================
+
+Date: 2026-01-24
+Source: https://tmpfiles.org/dl/21113548/privkey_address.csv
+
+RESULT: 0 MATCHES FOUND (ZERO)
+================================================================================
+
+Dataset Overview:
+-----------------
+• Total CSV entries:       35,598 (private_key,address pairs)
+• Unique addresses:        27,208
+• Funded DB addresses:  55,370,071
+• Matches found:                0
+• Match rate:                0.00%
+
+What This Means:
+----------------
+✗ None of the 27,208 candidate addresses have EVER received Bitcoin
+✗ All candidates are bloom filter false positives or unused addresses
+✓ Bitcoin's cryptographic security remains completely intact
+✓ Systematic keyspace searching fails (as expected mathematically)
+
+Private Key Pattern:
+--------------------
+All keys share common prefix:
+  44199b92fdbf3a29a38a7ed650968cdeb3fdb8d09f6e84f47b21...
+
+Indicates:
+  → Systematic generation (VanitySearch or similar)
+  → Narrow keyspace range (not random sampling)
+  → Targeted search that yielded zero funded addresses
+
+Cumulative Analysis:
+--------------------
+Total candidates analyzed across all datasets: 2,500,587
+Total funded matches found:                            0
+Consistency:                                        100%
+
+Statistical Reality:
+--------------------
+Expected collision probability: ~10^-35 (essentially zero)
+Actual result:                  0 matches
+Conclusion:                     Results align with probability theory
+
+Bitcoin's keyspace (2^256) is so vast that even systematic searching
+of specific ranges yields ZERO funded addresses.
+
+Security Verdict:
+-----------------
+SECURE ✓
+
+Bitcoin's 256-bit private keys remain practically impossible to brute force.
+This analysis demonstrates the real-world infeasibility of keyspace attacks.
+
+Files Generated:
+----------------
+• privkey_csv_comparison_results.md (comprehensive 350+ line report)
+• candidate_addresses.txt (27,208 unique addresses)
+• matches.txt (0 bytes - no matches)
+• funded_addresses_sorted.txt (55M addresses, 2.1 GB)
+
+Analysis Time: 3 minutes 27 seconds
+================================================================================

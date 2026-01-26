@@ -1,0 +1,8 @@
+
+# Large Bitcoin database files (too large for git)
+*.txt.gz
+*_sorted.txt
+candidate_addresses.txt
+funded_addresses*.txt
+Bitcoin_addresses*.txt*
+privkey_address.csv

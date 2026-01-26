@@ -1,0 +1,16 @@
+Bitcoin Address Comparison Summary
+Generated: Sat Jan 24 02:57:07 UTC 2026
+=====================================
+
+Files Processed:
+- Candidate addresses: all_candidates_full.txt (14991007 total, 12147704 unique)
+- Funded addresses: Bitcoin_addresses_LATEST.txt (55354799 total, 55354799 unique)
+
+Results:
+- Matches found: 0
+
+Output files:
+- matches.txt: List of matching addresses
+- comparison.log: Detailed execution log
+
+Working directory: /root/bitcoin_address_check
