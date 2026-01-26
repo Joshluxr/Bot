@@ -1,0 +1,23 @@
+
+Latest Server1 Analysis Report
+================================================================================
+Generated: 2026-01-26 13:33:36
+
+Source: tmpfiles.org/dl/21301309/server1_candidates.txt
+Addresses: 26,032
+Funded matches: 0
+
+Premium Patterns Found:
+
+FEE PREFIX (2 found):
+  1FEE9huWihg1djXubL3DkMsuK6efTT6U2D
+  1FEe4yMT1f2u7ApLoT6XJhEXQsdH5nuKhC
+
+BTC PREFIX (1 found):
+  1BTcGxwa1JrmD1ub5tyrWZHYXFWXZ8Nn5V
+
+QUAD 7S (1 found):
+  1777zx4v4R562tS4veQBDY7zhHPZ36R9ZQ
+
+QUAD 8S (1 found):
+  1888ZkEbmzbMYjQrk3Tb8jVwTfQ92akS3H
