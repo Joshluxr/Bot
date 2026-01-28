@@ -109,12 +109,39 @@ high * 2^256 mod p = high * 0x1000003D1 mod p
 
 ### Memory Layout
 
-Keys are stored in VanitySearch memory layout for compatibility:
+Keys are stored in VanitySearch's **strided** memory layout for GPU coalesced access:
 ```
-Block b, Thread t:
-  X coordinate: h_keys[b * 512 * 8 + t * 4 + 0..3]
-  Y coordinate: h_keys[b * 512 * 8 + t * 4 + 4*512 + 0..3]
+Block b, Thread t (within block):
+  X[0]: h_keys[b * 512 * 8 + t]
+  X[1]: h_keys[b * 512 * 8 + t + 512]
+  X[2]: h_keys[b * 512 * 8 + t + 1024]
+  X[3]: h_keys[b * 512 * 8 + t + 1536]
+  Y[0]: h_keys[b * 512 * 8 + 2048 + t]
+  Y[1]: h_keys[b * 512 * 8 + 2048 + t + 512]
+  Y[2]: h_keys[b * 512 * 8 + 2048 + t + 1024]
+  Y[3]: h_keys[b * 512 * 8 + 2048 + t + 1536]
 ```
+
+This strided layout allows adjacent GPU threads to access adjacent memory locations,
+maximizing memory bandwidth through coalesced reads.
+
+## Changelog
+
+### v1.1 (2025-01-28) - Memory Layout Fix
+**CRITICAL BUG FIX**: Fixed memory layout mismatch in `init_keys_from_start()`.
+
+The fast key initialization was storing public keys in contiguous format, but the GPU kernel uses a strided memory layout (via `Load256A` macro). This caused:
+- GPU reading wrong public keys
+- Addresses found didn't match reconstructed private keys
+- **All keys found before this fix are INVALID**
+
+If you ran SearchK4_fast before this fix, you must restart the search from the beginning.
+
+### v1.0 - Initial Fast Key Init
+- 65,000x speedup in key initialization
+- Montgomery batch inversion
+- Jacobian coordinates
+- Precomputed G table
 
 ## Credits
 
