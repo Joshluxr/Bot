@@ -849,25 +849,25 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
     const int BATCH_SIZE = 8192;
     int remaining = nbThread - 1;
     int processed = 1;
-    
+
     uint64_t* dx_batch = (uint64_t*)malloc(BATCH_SIZE * 32);
     uint64_t* inv_batch = (uint64_t*)malloc(BATCH_SIZE * 32);
     uint64_t* iGx_batch = (uint64_t*)malloc(BATCH_SIZE * 32);
     uint64_t* iGy_batch = (uint64_t*)malloc(BATCH_SIZE * 32);
-    
+
     time_t start_time = time(NULL);
-    
+
     while (remaining > 0) {
         int batch = (remaining < BATCH_SIZE) ? remaining : BATCH_SIZE;
-        
+
         for (int i = 0; i < batch; i++) {
             uint64_t offset = processed + i;
             get_iG(&iGx_batch[i * 4], &iGy_batch[i * 4], offset);
             mod_sub(&dx_batch[i * 4], &iGx_batch[i * 4], p0x);
         }
-        
+
         batch_mod_inv(inv_batch, dx_batch, batch);
-        
+
         for (int i = 0; i < batch; i++) {
             int t = processed + i;
 
@@ -898,14 +898,14 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
                 h_keys[yBase + j * NB_THREAD_PER_GROUP] = ry[j];
             }
         }
-        
+
         processed += batch;
         remaining -= batch;
-        
+
         printf("\r  Generated %d/%d keys...", processed, nbThread);
         fflush(stdout);
     }
-    
+
     free(dx_batch);
     free(inv_batch);
     free(iGx_batch);
@@ -920,25 +920,70 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
 }
 
 // Reconstruct private key from match info
-void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t iter) {
-    // privkey = baseKey + tid + (iter * nbThread * STEP_SIZE) + incr
-    uint64_t offset[4] = {0, 0, 0, 0};
+// reportedOdd: if true, the GPU matched on the 03+X (odd Y) compressed form
+void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t iter, bool reportedOdd) {
+    // Understanding the kernel's group computation:
+    // - Each thread starts with pubkey P[tid] = (baseKey + tid) * G
+    // - The kernel computes P[tid] + k*G for various k values
+    // - incr represents which point was checked relative to the starting point
+    //
+    // The GPU's _GetHash160CompSym generates both compressed forms from X only:
+    //   h1 = hash160(02 + X)  -> even Y compressed form
+    //   h2 = hash160(03 + X)  -> odd Y compressed form
+    //
+    // For a point P = k*G with coordinates (X, Y):
+    //   - If Y is even: compressed pubkey is 02+X, corresponds to key k
+    //   - If Y is odd:  compressed pubkey is 03+X, corresponds to key k
+    //   - The OTHER compressed form (opposite parity) corresponds to key N-k
+    //
+    // The kernel checks BOTH forms. When reportedOdd=0, the match was on 02+X.
+    // When reportedOdd=1, the match was on 03+X.
+    //
+    // To get the correct key:
+    //   - Compute the base key k = baseKey + tid + keyOffset
+    //   - Compute Y parity of k*G
+    //   - If Y parity matches reportedOdd: return k
+    //   - If Y parity doesn't match reportedOdd: return N - k
+
+    // For odd reported parity, the kernel stored -incr, so flip it back
+    int32_t actualIncr = reportedOdd ? -incr : incr;
+
+    // The kernel passes incr such that:
+    //   actualIncr = GRP_SIZE/2 means offset 0 from starting point
+    //   actualIncr = GRP_SIZE/2 + k means offset +k from starting point
+    int32_t keyOffset = actualIncr - 512;  // 512 = GRP_SIZE/2
+
+    // Formula: basePrivkey = baseKey + tid + (iter * nbThread * STEP_SIZE) + keyOffset
+    uint64_t basePrivkey[4] = {0, 0, 0, 0};
 
     // Add tid
-    add256_scalar(offset, g_baseKey, (uint64_t)tid);
+    add256_scalar(basePrivkey, g_baseKey, (uint64_t)tid);
 
     // Add iteration offset: iter * nbThread * STEP_SIZE
     uint64_t iterOffset = iter * (uint64_t)g_nbThread * STEP_SIZE;
-    add256_scalar(offset, offset, iterOffset);
+    add256_scalar(basePrivkey, basePrivkey, iterOffset);
 
-    // Add incr (can be negative for odd parity)
-    if (incr >= 0) {
-        add256_scalar(privkey, offset, (uint64_t)incr);
+    // Add keyOffset (can be negative)
+    if (keyOffset >= 0) {
+        add256_scalar(basePrivkey, basePrivkey, (uint64_t)keyOffset);
     } else {
-        // Handle negative incr by subtracting
-        uint64_t negIncr = (uint64_t)(-incr);
-        uint64_t tmp[4] = {negIncr, 0, 0, 0};
-        sub256(privkey, offset, tmp);
+        uint64_t negOffset = (uint64_t)(-keyOffset);
+        uint64_t tmp[4] = {negOffset, 0, 0, 0};
+        sub256(basePrivkey, basePrivkey, tmp);
+    }
+
+    // Compute Y parity of basePrivkey * G
+    uint64_t px[4], py[4];
+    scalar_mult_G(px, py, basePrivkey);
+    bool actualYOdd = (py[0] & 1) != 0;
+
+    // If actual Y parity matches reported parity, use basePrivkey
+    // Otherwise, use N - basePrivkey
+    if (actualYOdd == reportedOdd) {
+        memcpy(privkey, basePrivkey, 32);
+    } else {
+        // Negate mod N (the curve order): privkey = N - basePrivkey
+        sub256(privkey, SECP_N, basePrivkey);
     }
 }
 
@@ -1263,7 +1308,7 @@ int main(int argc, char** argv) {
                 if (g_sequentialMode) {
                     // Reconstruct and display private key
                     uint64_t privkey[4];
-                    reconstruct_privkey(privkey, tid, incr, iter);
+                    reconstruct_privkey(privkey, tid, incr, iter, isOdd != 0);
 
                     char hexKey[65], wifKey[60];
                     format_256bit_hex(privkey, hexKey);
