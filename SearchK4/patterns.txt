@@ -5,12 +5,6 @@
 1FeexV6bAH
 1A1zP1eP5Q
 
-# Short prefixes for testing
-1Feex
-1Test
-1Bit
-1BTC
-
 # Custom patterns
 1ARWCREnm
 1FvUkW8thc
