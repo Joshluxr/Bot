@@ -1,0 +1,19 @@
+# SearchK4 Vanity Patterns
+# One pattern per line, must start with '1' for mainnet
+
+# Famous addresses
+1FeexV6bAH
+1A1zP1eP5Q
+
+# Short prefixes for testing
+1Feex
+1Test
+1Bit
+1BTC
+
+# Custom patterns
+1ARWCREnm
+1FvUkW8thc
+138EMxwMt
+1VeMPNgEtQ
+1NY5KheH3ko
