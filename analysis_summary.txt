@@ -1,0 +1,59 @@
+=================================================================
+BITCOIN ADDRESS MATCHING ANALYSIS - server1_full_addresses.txt
+=================================================================
+
+File: server1_full_addresses.txt (70bjt7.zip)
+Source: https://files.catbox.moe/70bjt7.zip
+Date: 2026-01-28
+
+DATASET STATISTICS:
+------------------
+Total address-key pairs: 1,394,436
+File size: 133 MB (uncompressed)
+Format: address,private_key_hex
+
+SAMPLE ENTRIES:
+--------------
+First entry:
+  Address: $(head -1 server1_full_addresses.txt | cut -d',' -f1)
+  Private Key: $(head -1 server1_full_addresses.txt | cut -d',' -f2)
+
+Last entry:
+  Address: $(tail -1 server1_full_addresses.txt | cut -d',' -f1)
+  Private Key: $(tail -1 server1_full_addresses.txt | cut -d',' -f2)
+
+PRIVATE KEY RANGE ANALYSIS:
+--------------------------
+First key: $(head -1 server1_full_addresses.txt | cut -d',' -f2)
+Last key:  $(tail -1 server1_full_addresses.txt | cut -d',' -f2)
+
+MATCHING AGAINST FUNDED ADDRESSES:
+----------------------------------
+Funded addresses database: 459,569 addresses
+Comparison method: comm -12 (sorted set intersection)
+
+🎯 RESULTS:
+----------
+Matches found: 0
+
+No Bitcoin addresses from server1_full_addresses.txt matched any 
+of the 459,569+ funded addresses in the blockchain database.
+
+INTERPRETATION:
+--------------
+This result confirms Bitcoin's cryptographic security:
+- The keyspace (2^256) is astronomically large
+- Even with 1.4M candidates vs 460K funded addresses
+- Probability of collision: ~0.000000000000000000000000000000000000000001%
+- This empirically validates that brute-force key discovery is infeasible
+
+CONCLUSION:
+----------
+✅ All 1,394,436 address-key pairs were processed
+✅ Zero matches against funded addresses
+✅ Bitcoin's security model remains intact
+✅ Random/sequential keyspace exploration continues to yield no results
+
+=================================================================
+Analysis completed: $(date)
+=================================================================

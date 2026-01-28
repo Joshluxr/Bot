@@ -1,0 +1,7 @@
+
+# Large Bitcoin address datasets
+*.zip
+server1_full_addresses.txt
+server1_addresses_only.txt
+funded_addresses_only.txt
+bitcoin_addresses_sorted.txt.gz
