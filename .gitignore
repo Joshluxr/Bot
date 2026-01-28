@@ -7,3 +7,10 @@ funded_addresses_only.txt
 bitcoin_addresses_sorted.txt.gz
 server3_full_addresses.txt cat .gitignore
 check_feexv.py git add .gitignore
+
+# Updated datasets
+server1_addresses_update.txt
+server1_update_sorted.txt
+server3_addresses_update.txt
+server3_update_sorted.txt
+*_addresses_update.zip
