@@ -825,13 +825,17 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
     printf("  Computing base point...\n"); fflush(stdout); printf("DEBUG: calling scalar_mult_G\n"); fflush(stdout);
     scalar_mult_G(p0x, p0y, g_baseKey);
 
-    // Store first key (t=0)
+    // Store first key (t=0) using GPU's strided memory layout
+    // GPU expects: x[i] at offset threadIdx + i*blockDim for i=0..3
     {
-        int xBase = 0;
-        int yBase = 4 * NB_THREAD_PER_GROUP;
+        int block = 0;
+        int tidInBlock = 0;
+        int blockBase = block * NB_THREAD_PER_GROUP * 8;
+        int xBase = blockBase + tidInBlock;
+        int yBase = blockBase + 4 * NB_THREAD_PER_GROUP + tidInBlock;
         for (int j = 0; j < 4; j++) {
-            h_keys[xBase + j] = p0x[j];
-            h_keys[yBase + j] = p0y[j];
+            h_keys[xBase + j * NB_THREAD_PER_GROUP] = p0x[j];
+            h_keys[yBase + j * NB_THREAD_PER_GROUP] = p0y[j];
         }
     }
 
@@ -866,11 +870,11 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
         
         for (int i = 0; i < batch; i++) {
             int t = processed + i;
-            
+
             uint64_t *iGx = &iGx_batch[i * 4];
             uint64_t *iGy = &iGy_batch[i * 4];
             uint64_t *inv_dx = &inv_batch[i * 4];
-            
+
             uint64_t dy[4], s[4], s2[4], rx[4], ry[4], tmp[4];
             mod_sub(dy, iGy, p0y);
             mod_mul(s, dy, inv_dx);
@@ -880,15 +884,18 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
             mod_sub(tmp, p0x, rx);
             mod_mul(ry, s, tmp);
             mod_sub(ry, ry, p0y);
-            
+
+            // Store using GPU's strided memory layout
+            // GPU expects: x[i] at offset threadIdx + i*blockDim for i=0..3
             int block = t / NB_THREAD_PER_GROUP;
             int tidInBlock = t % NB_THREAD_PER_GROUP;
-            int xBase = block * NB_THREAD_PER_GROUP * 8 + tidInBlock * 4;
-            int yBase = xBase + 4 * NB_THREAD_PER_GROUP;
-            
+            int blockBase = block * NB_THREAD_PER_GROUP * 8;
+            int xBase = blockBase + tidInBlock;
+            int yBase = blockBase + 4 * NB_THREAD_PER_GROUP + tidInBlock;
+
             for (int j = 0; j < 4; j++) {
-                h_keys[xBase + j] = rx[j];
-                h_keys[yBase + j] = ry[j];
+                h_keys[xBase + j * NB_THREAD_PER_GROUP] = rx[j];
+                h_keys[yBase + j * NB_THREAD_PER_GROUP] = ry[j];
             }
         }
         
