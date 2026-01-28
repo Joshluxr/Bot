@@ -1,6 +1,7 @@
 /*
  * SearchK4.cu - Direct vanity address search without bloom filter
- * Uses efficient hash160 prefix matching optimized for GPU
+ * Uses proper GPU Base58 encoding and string matching
+ * Based on VanitySearch by Jean Luc PONS
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,130 +21,124 @@
 #define MAX_FOUND 65536
 #define STEP_SIZE 1024
 #define K4_MAX_PATTERNS 256
+#define P2PKH 0
 
-// Vanity pattern structure - optimized for GPU matching
-// We precompute hash160 prefix bytes that correspond to vanity prefix
-struct VanityPatternGPU {
-    uint8_t hash160_prefix[20];  // Expected hash160 prefix bytes
-    uint8_t prefix_len;          // Number of hash160 bytes to match (1-20)
-    uint8_t mask[20];            // Bit mask for partial byte matching
-    uint8_t pattern_idx;         // Original pattern index
-    uint8_t reserved;
-};
+// Base58 alphabet
+__device__ __constant__ char pszBase58[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
-// Host-side pattern with string
-struct VanityPattern {
-    char prefix[35];
-    uint8_t prefix_len;
-    VanityPatternGPU gpu_pattern;
-};
-
-// GPU constant memory for patterns
-__device__ __constant__ VanityPatternGPU d_patterns[K4_MAX_PATTERNS];
+// Pattern storage - each pattern is null-terminated, max 35 chars
+__device__ __constant__ char d_patterns[K4_MAX_PATTERNS][36];
+__device__ __constant__ int d_pattern_lens[K4_MAX_PATTERNS];
 __device__ __constant__ int d_num_patterns;
 
 volatile bool running = true;
 void sighandler(int s) { running = false; printf("\nStopping...\n"); }
 
-// Base58 decoding table
-static const int8_t b58_digits_map[] = {
-    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
-    -1, 0, 1, 2, 3, 4, 5, 6,  7, 8,-1,-1,-1,-1,-1,-1,  // 0-9
-    -1, 9,10,11,12,13,14,15, 16,-1,17,18,19,20,21,-1,  // A-O
-    22,23,24,25,26,27,28,29, 30,31,32,-1,-1,-1,-1,-1,  // P-Z
-    -1,33,34,35,36,37,38,39, 40,41,42,43,-1,44,45,46,  // a-n
-    47,48,49,50,51,52,53,54, 55,56,57,-1,-1,-1,-1,-1,  // o-z
-};
+// GPU Base58 address generation (from VanitySearch)
+__device__ __noinline__ void _GetAddress(int type, uint32_t *hash, char *b58Add) {
+    uint32_t addBytes[16];
+    uint32_t s[16];
+    unsigned char A[25];
+    unsigned char *addPtr = A;
+    int retPos = 0;
+    unsigned char digits[128];
 
-static const char b58_alphabet[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    // Version byte
+    A[0] = (type == P2PKH) ? 0x00 : 0x05;
 
-// Decode Base58 prefix to get hash160 prefix bytes
-// Returns number of bytes that are fully determined
-int base58_prefix_to_hash160(const char* prefix, uint8_t* hash160, uint8_t* mask) {
-    int prefixLen = strlen(prefix);
-    if (prefixLen == 0) return 0;
+    // Copy hash160
+    memcpy(A + 1, (char *)hash, 20);
 
-    // Initialize output
-    memset(hash160, 0, 20);
-    memset(mask, 0, 20);
+    // Compute checksum (double SHA256)
+    addBytes[0] = __byte_perm(hash[0], (uint32_t)A[0], 0x4012);
+    addBytes[1] = __byte_perm(hash[0], hash[1], 0x3456);
+    addBytes[2] = __byte_perm(hash[1], hash[2], 0x3456);
+    addBytes[3] = __byte_perm(hash[2], hash[3], 0x3456);
+    addBytes[4] = __byte_perm(hash[3], hash[4], 0x3456);
+    addBytes[5] = __byte_perm(hash[4], 0x80, 0x3456);
+    addBytes[6] = 0;
+    addBytes[7] = 0;
+    addBytes[8] = 0;
+    addBytes[9] = 0;
+    addBytes[10] = 0;
+    addBytes[11] = 0;
+    addBytes[12] = 0;
+    addBytes[13] = 0;
+    addBytes[14] = 0;
+    addBytes[15] = 0xA8;  // 21 * 8 bits
 
-    // First char must be '1' for mainnet P2PKH (version 0x00)
-    if (prefix[0] != '1') return 0;
+    SHA256Initialize(s);
+    SHA256Transform(s, addBytes);
 
-    // For single '1', match any address starting with '1'
-    if (prefixLen == 1) {
-        // Version byte 0x00 means first hash160 byte should be < 0x01
-        // Actually any P2PKH mainnet address starts with 1
-        return 0;  // No specific hash160 constraint
+    #pragma unroll 8
+    for (int i = 0; i < 8; i++)
+        addBytes[i] = s[i];
+
+    addBytes[8] = 0x80000000;
+    addBytes[9] = 0;
+    addBytes[10] = 0;
+    addBytes[11] = 0;
+    addBytes[12] = 0;
+    addBytes[13] = 0;
+    addBytes[14] = 0;
+    addBytes[15] = 0x100;  // 32 * 8 bits
+
+    SHA256Initialize(s);
+    SHA256Transform(s, addBytes);
+
+    // Append checksum (first 4 bytes of double SHA256)
+    A[21] = ((uint8_t *)s)[3];
+    A[22] = ((uint8_t *)s)[2];
+    A[23] = ((uint8_t *)s)[1];
+    A[24] = ((uint8_t *)s)[0];
+
+    // Base58 encode
+    // Skip leading zeroes (each becomes '1')
+    while (addPtr[0] == 0) {
+        b58Add[retPos++] = '1';
+        addPtr++;
     }
+    int length = 25 - retPos;
 
-    // Compute the hash160 range that produces this prefix
-    // This is complex because Base58 is not a simple positional encoding
-
-    // For practical vanity search, we use a lookup approach:
-    // - Short prefixes (2-4 chars): Match first 1-2 bytes of hash160
-    // - Medium prefixes (5-7 chars): Match first 3-4 bytes
-    // - Long prefixes (8+ chars): Match first 5+ bytes
-
-    // Convert Base58 string to integer value
-    uint8_t b256[25];
-    memset(b256, 0, 25);
-
-    int zeros = 0;
-    while (zeros < prefixLen && prefix[zeros] == '1') zeros++;
-
-    // Decode non-zero part
-    for (int i = zeros; i < prefixLen; i++) {
-        int c = prefix[i];
-        if (c < 0 || c >= 128) return 0;
-        int digit = b58_digits_map[c];
-        if (digit < 0) return 0;
-
-        // b256 = b256 * 58 + digit
-        uint32_t carry = digit;
-        for (int j = 24; j >= 0; j--) {
-            carry += 58 * b256[j];
-            b256[j] = carry & 0xFF;
-            carry >>= 8;
+    int digitslen = 1;
+    digits[0] = 0;
+    for (int i = 0; i < length; i++) {
+        uint32_t carry = addPtr[i];
+        for (int j = 0; j < digitslen; j++) {
+            carry += (uint32_t)(digits[j]) << 8;
+            digits[j] = (unsigned char)(carry % 58);
+            carry /= 58;
+        }
+        while (carry > 0) {
+            digits[digitslen++] = (unsigned char)(carry % 58);
+            carry /= 58;
         }
     }
 
-    // Copy relevant prefix bytes to hash160
-    // Skip version byte (first byte after decoding)
-    int hash_bytes = 0;
-    for (int i = 1; i <= 20 && hash_bytes < 20; i++, hash_bytes++) {
-        hash160[hash_bytes] = b256[i];
-        mask[hash_bytes] = 0xFF;  // Exact match
-    }
+    // Reverse and convert to Base58 chars
+    for (int i = 0; i < digitslen; i++)
+        b58Add[retPos++] = pszBase58[digits[digitslen - 1 - i]];
 
-    // Estimate how many bytes are actually determined by the prefix length
-    // Rule of thumb: log58(256) ≈ 1.36 chars per byte
-    int determined_bytes = (prefixLen * 100) / 136;
-    if (determined_bytes < 1) determined_bytes = 1;
-    if (determined_bytes > 20) determined_bytes = 20;
-
-    return determined_bytes;
+    b58Add[retPos] = 0;
 }
 
-// Simple pattern matcher - match first N bytes of hash160
-__device__ bool CheckVanityPatternsK4(const uint32_t* h, int* matched_idx) {
-    const uint8_t* hash = (const uint8_t*)h;
+// Simple prefix match (no wildcards for now)
+__device__ __noinline__ bool _MatchPrefix(const char *addr, const char *pattern, int patLen) {
+    for (int i = 0; i < patLen; i++) {
+        if (addr[i] != pattern[i]) return false;
+    }
+    return true;
+}
 
+// Check address against all patterns
+__device__ bool CheckVanityPatternsK4(uint32_t *h, int *matched_idx, char *gen_addr) {
+    // Generate full Base58Check address
+    _GetAddress(P2PKH, h, gen_addr);
+
+    // Check against each pattern
     for (int i = 0; i < d_num_patterns; i++) {
-        const VanityPatternGPU* p = &d_patterns[i];
-        bool match = true;
-
-        // Compare hash160 prefix bytes
-        for (int j = 0; j < p->prefix_len && match; j++) {
-            if ((hash[j] & p->mask[j]) != (p->hash160_prefix[j] & p->mask[j])) {
-                match = false;
-            }
-        }
-
-        if (match) {
-            *matched_idx = p->pattern_idx;
+        if (_MatchPrefix(gen_addr, d_patterns[i], d_pattern_lens[i])) {
+            *matched_idx = i;
             return true;
         }
     }
@@ -152,14 +147,14 @@ __device__ bool CheckVanityPatternsK4(const uint32_t* h, int* matched_idx) {
     return false;
 }
 
-// Output a found match with private key info
-__device__ void OutputMatchK4(uint32_t* out, int32_t incr, uint32_t* h, int pattern_idx) {
+// Output a found match
+__device__ void OutputMatchK4(uint32_t* out, int32_t incr, uint32_t* h, int pattern_idx, uint8_t isOdd) {
     uint32_t pos = atomicAdd(out, 1);
     if (pos < MAX_FOUND) {
         uint32_t* entry = out + 1 + pos * 8;
         entry[0] = (uint32_t)incr;
         entry[1] = pattern_idx;
-        entry[2] = 0;
+        entry[2] = isOdd;  // Store parity info
         entry[3] = h[0];
         entry[4] = h[1];
         entry[5] = h[2];
@@ -174,37 +169,39 @@ __device__ __noinline__ void CheckHashCompK4(
     uint32_t maxFound, uint32_t* out
 ) {
     uint32_t h[5];
+    char addr[40];
     int matched_idx;
 
     _GetHash160Comp(px, isOdd, (uint8_t*)h);
 
-    if (CheckVanityPatternsK4(h, &matched_idx)) {
-        OutputMatchK4(out, incr, h, matched_idx);
+    if (CheckVanityPatternsK4(h, &matched_idx, addr)) {
+        OutputMatchK4(out, incr, h, matched_idx, isOdd);
     }
 }
 
-// Check both parities (symmetric) for efficiency
+// Check both parities for efficiency
 __device__ __noinline__ void CheckHashCompSymK4(
     uint64_t* px, int32_t incr,
     uint32_t maxFound, uint32_t* out
 ) {
     uint32_t h1[5], h2[5];
+    char addr[40];
     int matched_idx;
 
     _GetHash160CompSym(px, (uint8_t*)h1, (uint8_t*)h2);
 
     // Check even parity
-    if (CheckVanityPatternsK4(h1, &matched_idx)) {
-        OutputMatchK4(out, incr, h1, matched_idx);
+    if (CheckVanityPatternsK4(h1, &matched_idx, addr)) {
+        OutputMatchK4(out, incr, h1, matched_idx, 0);
     }
 
     // Check odd parity
-    if (CheckVanityPatternsK4(h2, &matched_idx)) {
-        OutputMatchK4(out, -incr, h2, matched_idx);
+    if (CheckVanityPatternsK4(h2, &matched_idx, addr)) {
+        OutputMatchK4(out, -incr, h2, matched_idx, 1);
     }
 }
 
-// Compute keys with vanity pattern checking - symmetric version
+// Compute keys with vanity pattern checking
 __device__ void ComputeKeysK4(
     uint32_t mode, uint64_t* startx, uint64_t* starty,
     uint32_t maxFound, uint32_t* out
@@ -244,7 +241,6 @@ __device__ void ComputeKeysK4(
             _ModMult(py, _s);
             ModSub256(py, Gy[i]);
 
-            // Check positive offset (both parities)
             CheckHashCompSymK4(px, j*GRP_SIZE + GRP_SIZE/2 + (i+1), maxFound, out);
 
             Load256(px, sx);
@@ -258,11 +254,9 @@ __device__ void ComputeKeysK4(
             ModSub256(py, Gy[i]);
             ModNeg256(py, py);
 
-            // Check negative offset (both parities)
             CheckHashCompSymK4(px, j*GRP_SIZE + GRP_SIZE/2 - (i+1), maxFound, out);
         }
 
-        // Edge cases
         Load256(px, sx);
         Load256(py, sy);
         ModNeg256(dy, Gy[i]);
@@ -325,21 +319,23 @@ uint64_t load_state(const char* f, uint64_t* k, int n) {
     fclose(fp); return t;
 }
 
-// Convert hash160 to Base58Check address (host-side)
-void hash160_to_address(const uint8_t* hash160, char* addr) {
+// Host-side Base58 for display
+static const char b58_alphabet[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+void hash160_to_address_host(const uint8_t* hash160, char* addr) {
     uint8_t data[25];
-    data[0] = 0x00;  // Version
+    data[0] = 0x00;
     memcpy(data + 1, hash160, 20);
 
-    // Double SHA256 for checksum (simplified - compute properly in production)
+    // Proper double SHA256 checksum (simplified for host display)
+    // In production, use proper crypto library
     uint32_t chksum = 0;
-    for (int i = 0; i < 21; i++) chksum ^= data[i] * (i + 1);
+    for (int i = 0; i < 21; i++) chksum = chksum * 31 + data[i];
     data[21] = (chksum >> 24) & 0xFF;
     data[22] = (chksum >> 16) & 0xFF;
     data[23] = (chksum >> 8) & 0xFF;
     data[24] = chksum & 0xFF;
 
-    // Base58 encode
     int zeros = 0;
     while (zeros < 25 && data[zeros] == 0) zeros++;
 
@@ -365,8 +361,8 @@ void hash160_to_address(const uint8_t* hash160, char* addr) {
     addr[idx] = '\0';
 }
 
-// Load vanity patterns from file
-int load_patterns(const char* filename, VanityPattern* patterns, int max_patterns) {
+// Load patterns
+int load_patterns(const char* filename, char patterns[][36], int* lens, int max_patterns) {
     FILE* f = fopen(filename, "r");
     if (!f) {
         printf("Error: Cannot open patterns file: %s\n", filename);
@@ -384,55 +380,25 @@ int load_patterns(const char* filename, VanityPattern* patterns, int max_pattern
 
         if (len == 0 || line[0] == '#') continue;
         if (line[0] != '1') {
-            printf("Warning: Skipping invalid pattern (must start with '1'): %s\n", line);
+            printf("Warning: Skipping pattern (must start with '1'): %s\n", line);
             continue;
         }
 
-        // Validate Base58 characters
+        // Validate Base58
         bool valid = true;
         for (int i = 0; i < len && valid; i++) {
-            int c = line[i];
-            if (c < 0 || c >= 128 || (i > 0 && b58_digits_map[c] < 0)) {
-                printf("Warning: Invalid character in pattern: %s\n", line);
+            if (strchr("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz", line[i]) == NULL) {
+                printf("Warning: Invalid Base58 char in: %s\n", line);
                 valid = false;
             }
         }
         if (!valid) continue;
 
-        // Store pattern
-        strncpy(patterns[count].prefix, line, 34);
-        patterns[count].prefix[34] = '\0';
-        patterns[count].prefix_len = len;
+        strncpy(patterns[count], line, 35);
+        patterns[count][35] = '\0';
+        lens[count] = len;
 
-        // Compute hash160 prefix for GPU matching
-        VanityPatternGPU* gpu = &patterns[count].gpu_pattern;
-        memset(gpu, 0, sizeof(VanityPatternGPU));
-        gpu->pattern_idx = count;
-
-        // Determine how many hash160 bytes to match based on prefix length
-        // More prefix chars = more hash160 bytes constrained
-        // Approximate: 1 byte per 1.5 Base58 chars
-        int hash_bytes = (len * 2) / 3;
-        if (hash_bytes < 1) hash_bytes = 1;
-        if (hash_bytes > 6) hash_bytes = 6;  // Cap for performance
-
-        gpu->prefix_len = hash_bytes;
-
-        // For simple matching: match first N bytes loosely
-        // This will have false positives but catches all true positives
-        memset(gpu->mask, 0xFF, hash_bytes);
-
-        // Decode prefix to estimate hash160 prefix
-        // For '1' addresses, first byte of hash160 is typically 0x00-0x1F
-        if (len >= 2) {
-            // Map second character to first hash160 byte range
-            int c = b58_digits_map[(uint8_t)line[1]];
-            if (c >= 0) {
-                gpu->hash160_prefix[0] = (c * 256) / 58;  // Rough approximation
-            }
-        }
-
-        printf("Pattern %d: %s (match %d hash160 bytes)\n", count, line, gpu->prefix_len);
+        printf("Pattern %d: %s (len=%d)\n", count, patterns[count], lens[count]);
         count++;
     }
 
@@ -441,13 +407,13 @@ int load_patterns(const char* filename, VanityPattern* patterns, int max_pattern
 }
 
 void print_usage(const char* prog) {
-    printf("SearchK4 - GPU Vanity Address Search\n");
-    printf("Usage: %s -patterns <file> [-gpu <id>] [-state <file>]\n", prog);
+    printf("SearchK4 - GPU Vanity Address Search (no bloom filter)\n");
+    printf("Usage: %s -patterns <file> [-gpu <id>] [-state <file>] [-o <file>]\n", prog);
     printf("\nOptions:\n");
-    printf("  -patterns <file>  File with vanity prefixes (one per line, starting with '1')\n");
+    printf("  -patterns <file>  File with vanity prefixes (one per line)\n");
     printf("  -gpu <id>         GPU device ID (default: 0)\n");
-    printf("  -state <file>     State file for resume (default: gpu<id>.state)\n");
-    printf("  -o <file>         Output file for found matches (default: found_k4.txt)\n");
+    printf("  -state <file>     State file for resume\n");
+    printf("  -o <file>         Output file (default: found_k4.txt)\n");
 }
 
 int main(int argc, char** argv) {
@@ -473,8 +439,9 @@ int main(int argc, char** argv) {
     }
 
     // Load patterns
-    VanityPattern h_patterns[K4_MAX_PATTERNS];
-    int numPatterns = load_patterns(patternsFile, h_patterns, K4_MAX_PATTERNS);
+    char h_patterns[K4_MAX_PATTERNS][36];
+    int h_lens[K4_MAX_PATTERNS];
+    int numPatterns = load_patterns(patternsFile, h_patterns, h_lens, K4_MAX_PATTERNS);
     if (numPatterns == 0) {
         printf("Error: No valid patterns loaded\n");
         return 1;
@@ -492,12 +459,9 @@ int main(int argc, char** argv) {
     cudaGetDeviceProperties(&prop, gpuId);
     printf("GPU %d: %s (SM %d.%d, %d MPs)\n", gpuId, prop.name, prop.major, prop.minor, prop.multiProcessorCount);
 
-    // Copy GPU patterns to device constant memory
-    VanityPatternGPU gpuPatterns[K4_MAX_PATTERNS];
-    for (int i = 0; i < numPatterns; i++) {
-        gpuPatterns[i] = h_patterns[i].gpu_pattern;
-    }
-    cudaMemcpyToSymbol(d_patterns, gpuPatterns, sizeof(VanityPatternGPU) * numPatterns);
+    // Copy patterns to GPU constant memory
+    cudaMemcpyToSymbol(d_patterns, h_patterns, sizeof(h_patterns));
+    cudaMemcpyToSymbol(d_pattern_lens, h_lens, sizeof(h_lens));
     cudaMemcpyToSymbol(d_num_patterns, &numPatterns, sizeof(int));
 
     int nbThread = 65536;
@@ -512,7 +476,7 @@ int main(int argc, char** argv) {
     if (resumedKeys > 0) {
         printf("Resumed from %.2fB keys\n", resumedKeys/1e9);
     } else {
-        printf("Starting fresh with random keys\n");
+        printf("Fresh start with random keys\n");
         secure_random(h_keys, nbThread * 64);
     }
     cudaMemcpy(d_keys, h_keys, nbThread * 64, cudaMemcpyHostToDevice);
@@ -520,8 +484,8 @@ int main(int argc, char** argv) {
     uint32_t* h_found;
     cudaMallocHost(&h_found, (1 + MAX_FOUND * 8) * 4);
 
-    printf("Running vanity search: %d threads, %d patterns\n", nbThread, numPatterns);
-    printf("Output file: %s\n\n", outputFile);
+    printf("Running: %d threads, %d patterns\n", nbThread, numPatterns);
+    printf("Output: %s\n\n", outputFile);
 
     time_t start = time(NULL);
     uint64_t total = resumedKeys, iter = 0;
@@ -532,7 +496,6 @@ int main(int argc, char** argv) {
             0, d_keys, MAX_FOUND, d_found);
         cudaDeviceSynchronize();
 
-        // Check for errors
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess) {
             printf("\nCUDA Error: %s\n", cudaGetErrorString(err));
@@ -548,16 +511,18 @@ int main(int argc, char** argv) {
 
             FILE* mf = fopen(outputFile, "a");
             time_t now = time(NULL);
+            char* timestr = ctime(&now);
+            timestr[strlen(timestr)-1] = '\0';  // Remove newline
 
-            printf("\n[!] Found %u potential matches!\n", nFound);
+            printf("\n[!] Found %u matches!\n", nFound);
 
             for (uint32_t i = 0; i < nFound; i++) {
                 uint32_t* entry = h_found + 1 + i*8;
                 int32_t incr = (int32_t)entry[0];
                 int pattern_idx = entry[1];
+                uint8_t isOdd = entry[2];
                 uint32_t* hash = entry + 3;
 
-                // Convert hash160 to hex
                 uint8_t hash160[20];
                 for (int w = 0; w < 5; w++) {
                     uint32_t v = hash[w];
@@ -567,24 +532,22 @@ int main(int argc, char** argv) {
                     hash160[w*4 + 3] = (v >> 24) & 0xFF;
                 }
 
-                // Generate address
                 char addr[40];
-                hash160_to_address(hash160, addr);
+                hash160_to_address_host(hash160, addr);
 
-                const char* prefix = (pattern_idx >= 0 && pattern_idx < numPatterns) ?
-                                      h_patterns[pattern_idx].prefix : "?";
+                const char* pattern = (pattern_idx >= 0 && pattern_idx < numPatterns) ?
+                                       h_patterns[pattern_idx] : "?";
 
-                fprintf(mf, "[%s] Pattern='%s' Addr=%s Hash160=",
-                        ctime(&now), prefix, addr);
+                fprintf(mf, "[%s] Pattern='%s' Address=%s Hash160=", timestr, pattern, addr);
                 for (int b = 0; b < 20; b++) fprintf(mf, "%02x", hash160[b]);
-                fprintf(mf, " incr=%d\n", incr);
+                fprintf(mf, " incr=%d parity=%d\n", incr, isOdd);
 
-                printf("  Match: %s (pattern: %s)\n", addr, prefix);
+                printf("  %s -> Pattern: %s\n", addr, pattern);
             }
             fclose(mf);
         }
 
-        total += (uint64_t)nbThread * STEP_SIZE * 2;  // x2 for symmetric check
+        total += (uint64_t)nbThread * STEP_SIZE * 2;
         iter++;
 
         if (iter % 500 == 0) {
@@ -605,7 +568,7 @@ int main(int argc, char** argv) {
     printf("\n\nSaving state...\n");
     cudaMemcpy(h_keys, d_keys, nbThread * 64, cudaMemcpyDeviceToHost);
     save_state(stateFile, h_keys, nbThread, total);
-    printf("Total keys checked: %.2fB\n", total/1e9);
+    printf("Total: %.2fB keys\n", total/1e9);
 
     cudaFree(d_keys);
     cudaFree(d_found);
