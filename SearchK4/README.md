@@ -127,6 +127,41 @@ maximizing memory bandwidth through coalesced reads.
 
 ## Changelog
 
+### v1.4 (2025-01-29) - Thread Stride Initialization Fix
+**CRITICAL BUG FIX**: Fixed thread initialization to use proper strided offsets.
+
+**Problem**: Each thread was initialized with consecutive keys (thread t → baseKey + t), but the GPU kernel expects each thread to cover its own non-overlapping range of STEP_SIZE (1024) keys.
+
+**Root Cause**: The `init_keys_from_start()` function used:
+```cpp
+// WRONG: Threads have overlapping key ranges
+uint64_t offset = processed + i;  // offset = 1, 2, 3, ...
+```
+
+This meant:
+- Thread 0 checks keys: baseKey + 0 ± 512 = [baseKey - 512 .. baseKey + 511]
+- Thread 1 checks keys: baseKey + 1 ± 512 = [baseKey - 511 .. baseKey + 512]
+- 99.9% overlap between adjacent threads!
+
+**Fix Applied**:
+```cpp
+// CORRECT: Threads have non-overlapping ranges
+uint64_t offset = (uint64_t)(processed + i) * STEP_SIZE;  // offset = 1024, 2048, 3072, ...
+```
+
+Now:
+- Thread 0 checks: baseKey + 0 ± 512 = [baseKey - 512 .. baseKey + 511]
+- Thread 1 checks: baseKey + 1024 ± 512 = [baseKey + 512 .. baseKey + 1535]
+- No overlap!
+
+Also fixed private key reconstruction formula to match:
+```cpp
+// OLD: add256_scalar(basePrivkey, g_baseKey, (uint64_t)tid);
+// NEW: add256_scalar(basePrivkey, g_baseKey, (uint64_t)tid * STEP_SIZE);
+```
+
+**Impact**: The search was effectively ~1000x slower because it was checking the same keys repeatedly instead of covering new keyspace. With this fix, the search covers the full 67 million keys per iteration as intended.
+
 ### v1.3 (2025-01-29) - Private Key Y Parity Fix
 **CRITICAL BUG FIX**: Fixed private key reconstruction for compressed public keys with odd Y coordinates.
 
