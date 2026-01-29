@@ -38,6 +38,13 @@ __device__ __constant__ char d_patterns[K4_MAX_PATTERNS][36];
 __device__ __constant__ int d_pattern_lens[K4_MAX_PATTERNS];
 __device__ __constant__ int d_num_patterns;
 
+// Sequential mode delta: (nbThread * STEP_SIZE) * G
+// This is computed at runtime and copied to device memory
+// Used to advance all threads by the correct amount for non-overlapping ranges
+__device__ __constant__ uint64_t d_seqDeltaX[4];
+__device__ __constant__ uint64_t d_seqDeltaY[4];
+__device__ __constant__ int d_useSeqDelta;  // 0 = use _2Gn, 1 = use sequential delta
+
 volatile bool running = true;
 void sighandler(int s) { running = false; printf("\nStopping...\n"); }
 
@@ -690,6 +697,44 @@ __device__ void ComputeKeysK4(
         ModSub256(py, _2Gny);
     }
 
+    // For sequential mode: advance by the additional delta to reach (nbThread * STEP_SIZE) * G
+    // The loop above already advanced by STEP_SIZE * G = _2Gn
+    // Now add the extra (nbThread - 1) * STEP_SIZE * G from d_seqDelta
+    if (d_useSeqDelta) {
+        // Point addition: (px, py) = (px, py) + (d_seqDeltaX, d_seqDeltaY)
+        // Using standard EC point addition formula
+        uint64_t dxSeq[4], dySeq[4], sSeq[4], s2Seq[4], rxSeq[4], rySeq[4];
+
+        // dx = deltaX - px
+        ModSub256(dxSeq, d_seqDeltaX, px);
+
+        // dy = deltaY - py
+        ModSub256(dySeq, d_seqDeltaY, py);
+
+        // s = dy / dx (need modular inverse of dx)
+        // _ModInv operates on a 320-bit extended value and inverts in place
+        uint64_t invDx[5];  // 320 bits for _ModInv
+        Load256(invDx, dxSeq);
+        invDx[4] = 0;
+        _ModInv(invDx);
+        _ModMult(sSeq, dySeq, invDx);
+
+        // s^2
+        _ModSqr(s2Seq, sSeq);
+
+        // rx = s^2 - px - deltaX
+        ModSub256(rxSeq, s2Seq, px);
+        ModSub256(rxSeq, d_seqDeltaX);
+
+        // ry = s * (px - rx) - py
+        ModSub256(rySeq, px, rxSeq);
+        _ModMult(rySeq, sSeq, rySeq);
+        ModSub256(rySeq, py);
+
+        Load256(px, rxSeq);
+        Load256(py, rySeq);
+    }
+
     __syncthreads();
     Store256A(startx, px);
     Store256A(starty, py);
@@ -812,7 +857,7 @@ static void get_iG(uint64_t* rx, uint64_t* ry, uint64_t i) {
 }
 
 void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, bool isHex) {
-    printf("FAST Initializing %d sequential keys...\n", nbThread);
+    printf("Initializing %d threads for SEQUENTIAL range search...\n", nbThread);
 
     if (isHex) hex_to_256bit(startStr, g_baseKey);
     else decimal_to_256bit(startStr, g_baseKey);
@@ -821,12 +866,21 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
     format_256bit_hex(g_baseKey, hexStr);
     printf("  Start: 0x%s\n", hexStr);
 
+    // PROPER SEQUENTIAL RANGE SEARCH:
+    // - Space threads STEP_SIZE (1024) apart for non-overlapping coverage
+    // - Thread 0: keys [0, 1024), [nbThread*1024, nbThread*1024+1024), ...
+    // - Thread 1: keys [1024, 2048), [nbThread*1024+1024, ...], ...
+    // - Per iteration: keys [iter*nbThread*STEP_SIZE, (iter+1)*nbThread*STEP_SIZE)
+    //
+    // The kernel internally advances each thread by STEP_SIZE.
+    // We add an ADDITIONAL delta of (nbThread-1)*STEP_SIZE*G after each iteration
+    // to make total advancement = nbThread * STEP_SIZE per thread.
+
     uint64_t p0x[4], p0y[4];
-    printf("  Computing base point...\n"); fflush(stdout); printf("DEBUG: calling scalar_mult_G\n"); fflush(stdout);
+    printf("  Computing base point...\n"); fflush(stdout);
     scalar_mult_G(p0x, p0y, g_baseKey);
 
-    // Store first key (t=0) using GPU's strided memory layout
-    // GPU expects: x[i] at offset threadIdx + i*blockDim for i=0..3
+    // Store thread 0's starting point (key = baseKey)
     {
         int block = 0;
         int tidInBlock = 0;
@@ -861,7 +915,8 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
         int batch = (remaining < BATCH_SIZE) ? remaining : BATCH_SIZE;
 
         for (int i = 0; i < batch; i++) {
-            uint64_t offset = processed + i;
+            // Thread t at key baseKey + t*STEP_SIZE (spaced by STEP_SIZE for non-overlapping)
+            uint64_t offset = (uint64_t)(processed + i) * STEP_SIZE;
             get_iG(&iGx_batch[i * 4], &iGy_batch[i * 4], offset);
             mod_sub(&dx_batch[i * 4], &iGx_batch[i * 4], p0x);
         }
@@ -886,7 +941,6 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
             mod_sub(ry, ry, p0y);
 
             // Store using GPU's strided memory layout
-            // GPU expects: x[i] at offset threadIdx + i*blockDim for i=0..3
             int block = t / NB_THREAD_PER_GROUP;
             int tidInBlock = t % NB_THREAD_PER_GROUP;
             int blockBase = block * NB_THREAD_PER_GROUP * 8;
@@ -902,7 +956,7 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
         processed += batch;
         remaining -= batch;
 
-        printf("\r  Generated %d/%d keys...", processed, nbThread);
+        printf("\r  Generated %d/%d thread starting points...", processed, nbThread);
         fflush(stdout);
     }
 
@@ -910,11 +964,36 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
     free(inv_batch);
     free(iGx_batch);
     free(iGy_batch);
-    
+
     double elapsed = difftime(time(NULL), start_time);
     if (elapsed < 1) elapsed = 1;
-    printf("\n  Done! %d keys in %.1fs (%.0f keys/sec)\n", nbThread, elapsed, nbThread / elapsed);
-    printf("  Range: [start] to [start + %d]\n", nbThread - 1);
+    printf("\n  Done! %d threads in %.1fs (%.0f threads/sec)\n", nbThread, elapsed, nbThread / elapsed);
+
+    // Compute the sequential delta: (nbThread - 1) * STEP_SIZE * G
+    // The kernel already advances by STEP_SIZE * G internally,
+    // so we need the ADDITIONAL delta to reach total advancement of nbThread * STEP_SIZE * G
+    printf("  Computing sequential delta point...\n");
+
+    // delta_scalar = (nbThread - 1) * STEP_SIZE
+    uint64_t delta_scalar[4] = {0, 0, 0, 0};
+    uint64_t delta_val = (uint64_t)(nbThread - 1) * STEP_SIZE;
+    delta_scalar[0] = delta_val;
+
+    // Compute delta_point = delta_scalar * G
+    uint64_t seqDeltaX[4], seqDeltaY[4];
+    scalar_mult_G(seqDeltaX, seqDeltaY, delta_scalar);
+
+    // Copy to device constants
+    cudaMemcpyToSymbol(d_seqDeltaX, seqDeltaX, 32);
+    cudaMemcpyToSymbol(d_seqDeltaY, seqDeltaY, 32);
+    int useSeq = 1;
+    cudaMemcpyToSymbol(d_useSeqDelta, &useSeq, sizeof(int));
+
+    uint64_t totalDelta = (uint64_t)nbThread * STEP_SIZE;
+    printf("  Sequential mode: each iteration advances all threads by %lu keys\n", totalDelta);
+    printf("  Keys covered after N iterations: N * %lu\n", totalDelta);
+    printf("  Example: iter 1 covers first %lu keys\n", totalDelta);
+
     g_sequentialMode = true;
     g_nbThread = nbThread;
 }
@@ -922,28 +1001,13 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
 // Reconstruct private key from match info
 // reportedOdd: if true, the GPU matched on the 03+X (odd Y) compressed form
 void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t iter, bool reportedOdd) {
-    // Understanding the kernel's group computation:
-    // - Each thread starts with pubkey P[tid] = (baseKey + tid) * G
-    // - The kernel computes P[tid] + k*G for various k values
-    // - incr represents which point was checked relative to the starting point
+    // SEQUENTIAL MODE with proper thread spacing:
+    // - Thread tid starts at key baseKey + tid * STEP_SIZE
+    // - Each iteration covers STEP_SIZE keys, then advances by nbThread * STEP_SIZE
+    // - After iter iterations: thread is at key baseKey + tid*STEP_SIZE + iter*nbThread*STEP_SIZE
     //
-    // The GPU's _GetHash160CompSym generates both compressed forms from X only:
-    //   h1 = hash160(02 + X)  -> even Y compressed form
-    //   h2 = hash160(03 + X)  -> odd Y compressed form
-    //
-    // For a point P = k*G with coordinates (X, Y):
-    //   - If Y is even: compressed pubkey is 02+X, corresponds to key k
-    //   - If Y is odd:  compressed pubkey is 03+X, corresponds to key k
-    //   - The OTHER compressed form (opposite parity) corresponds to key N-k
-    //
-    // The kernel checks BOTH forms. When reportedOdd=0, the match was on 02+X.
-    // When reportedOdd=1, the match was on 03+X.
-    //
-    // To get the correct key:
-    //   - Compute the base key k = baseKey + tid + keyOffset
-    //   - Compute Y parity of k*G
-    //   - If Y parity matches reportedOdd: return k
-    //   - If Y parity doesn't match reportedOdd: return N - k
+    // The GPU checks both compressed forms (02+X and 03+X).
+    // reportedOdd indicates which form matched.
 
     // For odd reported parity, the kernel stored -incr, so flip it back
     int32_t actualIncr = reportedOdd ? -incr : incr;
@@ -953,15 +1017,25 @@ void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t
     //   actualIncr = GRP_SIZE/2 + k means offset +k from starting point
     int32_t keyOffset = actualIncr - 512;  // 512 = GRP_SIZE/2
 
-    // Formula: basePrivkey = baseKey + tid + (iter * nbThread * STEP_SIZE) + keyOffset
+    // Formula: basePrivkey = baseKey + tid*STEP_SIZE + iter*nbThread*STEP_SIZE + keyOffset
     uint64_t basePrivkey[4] = {0, 0, 0, 0};
 
-    // Add tid
-    add256_scalar(basePrivkey, g_baseKey, (uint64_t)tid);
+    // Add thread's starting offset: tid * STEP_SIZE
+    uint64_t threadOffset = (uint64_t)tid * STEP_SIZE;
+    add256_scalar(basePrivkey, g_baseKey, threadOffset);
 
     // Add iteration offset: iter * nbThread * STEP_SIZE
-    uint64_t iterOffset = iter * (uint64_t)g_nbThread * STEP_SIZE;
-    add256_scalar(basePrivkey, basePrivkey, iterOffset);
+    // This is a 256-bit multiplication since it can be large
+    uint64_t keysPerIter = (uint64_t)g_nbThread * STEP_SIZE;
+    // For iter up to ~2^32 and keysPerIter = 67M, product fits in 64 bits... actually no.
+    // iter * 67M can overflow 64-bit for large iter. Need to handle this carefully.
+    // For now, iter is usually small (< 2^32), and keysPerIter is ~67M, so product is ~2^56
+    // But for safety, let's do proper 128-bit arithmetic
+    __uint128_t iterOffset128 = (__uint128_t)iter * keysPerIter;
+    uint64_t iterOffsetLo = (uint64_t)iterOffset128;
+    uint64_t iterOffsetHi = (uint64_t)(iterOffset128 >> 64);
+    uint64_t iterOffsetArr[4] = {iterOffsetLo, iterOffsetHi, 0, 0};
+    add256(basePrivkey, basePrivkey, iterOffsetArr);
 
     // Add keyOffset (can be negative)
     if (keyOffset >= 0) {
@@ -1435,7 +1509,10 @@ int main(int argc, char** argv) {
             fclose(mf);
         }
 
-        total += (uint64_t)nbThread * STEP_SIZE * 2;
+        // Sequential mode: each iteration covers nbThread * STEP_SIZE unique keys
+        // After iter iterations: covered range [0, iter * nbThread * STEP_SIZE)
+        uint64_t keysPerIter = (uint64_t)nbThread * STEP_SIZE;
+        total += keysPerIter;
         iter++;
 
         if (iter % 500 == 0) {
@@ -1443,12 +1520,12 @@ int main(int argc, char** argv) {
             save_state_seq(stateFile, h_keys, nbThread, total, g_baseKey);
         }
 
-        if (iter % 50 == 0) {
+        if (iter % 10 == 0) {  // More frequent updates since each iter covers 67M keys
             double t = difftime(time(NULL), start);
             if (t < 1) t = 1;
-            double session = total - resumedKeys;
-            double rate = session / t / 1e6;
-            printf("\r[%5.0fs] %.2fB keys | %.2f MKey/s | iter=%lu     ", t, total/1e9, rate, iter);
+            double rate = total / t / 1e9;
+            printf("\r[%5.0fs] Covered: %.3fB keys | %.2f GKey/s | iter=%lu     ",
+                   t, total/1e9, rate, iter);
             fflush(stdout);
         }
     }
