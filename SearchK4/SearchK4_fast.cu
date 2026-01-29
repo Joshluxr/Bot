@@ -1215,25 +1215,31 @@ int load_patterns(const char* filename, char patterns[][36], int* lens, int max_
 
 void print_usage(const char* prog) {
     printf("SearchK4 - GPU Vanity Address Search with Sequential Keyspace\n\n");
-    printf("Usage: %s -patterns <file> [options]\n\n", prog);
+    printf("Usage: %s -patterns <file> -start <value> [options]\n", prog);
+    printf("       %s -patterns <file> -startx <hex> [options]\n", prog);
+    printf("       %s -patterns <file> -state <file> [options]\n\n", prog);
     printf("Required:\n");
-    printf("  -patterns <file>   File with vanity prefixes (one per line)\n\n");
+    printf("  -patterns <file>   File with vanity prefixes (one per line)\n");
+    printf("  -start <value>     Starting private key (decimal)  \\ One of these\n");
+    printf("  -startx <value>    Starting private key (hex)       | is REQUIRED\n");
+    printf("  -state <file>      Resume from state file          /\n\n");
     printf("Optional:\n");
     printf("  -gpu <id>          GPU device ID (default: 0)\n");
-    printf("  -start <value>     Starting private key (decimal)\n");
-    printf("  -startx <value>    Starting private key (hex, with or without 0x)\n");
-    printf("  -state <file>      State file for resume\n");
     printf("  -o <file>          Output file (default: found_k4.txt)\n");
     printf("  -h, --help         Show this help\n\n");
+    printf("NOTE: Random mode is DISABLED. Sequential range search is required.\n\n");
     printf("Examples:\n");
-    printf("  # Random search (original behavior):\n");
-    printf("  %s -patterns patterns.txt -gpu 0\n\n", prog);
-    printf("  # Sequential search from decimal start:\n");
-    printf("  %s -patterns patterns.txt -start 12345678901234567890\n\n", prog);
-    printf("  # Sequential search from hex start:\n");
-    printf("  %s -patterns patterns.txt -startx 0x8000000000000000\n\n", prog);
+    printf("  # Search from hex start (Puzzle #66 range):\n");
+    printf("  %s -patterns patterns.txt -startx 0x20000000000000000\n\n", prog);
+    printf("  # Search from decimal start:\n");
+    printf("  %s -patterns patterns.txt -start 36893488147419103232\n\n", prog);
     printf("  # Resume from state file:\n");
     printf("  %s -patterns patterns.txt -state gpu0.state\n\n", prog);
+    printf("  # Multiple GPUs (run separate instances):\n");
+    printf("  %s -patterns p.txt -gpu 0 -startx 0x20000000000000000 -state g0.state\n", prog);
+    printf("  %s -patterns p.txt -gpu 1 -startx 0x28000000000000000 -state g1.state\n", prog);
+    printf("  %s -patterns p.txt -gpu 2 -startx 0x30000000000000000 -state g2.state\n", prog);
+    printf("  %s -patterns p.txt -gpu 3 -startx 0x38000000000000000 -state g3.state\n\n", prog);
 }
 
 int main(int argc, char** argv) {
@@ -1302,7 +1308,7 @@ int main(int argc, char** argv) {
     uint64_t* h_keys = (uint64_t*)malloc(nbThread * 64);
     uint64_t resumedKeys = 0;
 
-    // Initialize keys based on mode
+    // Initialize keys - SEQUENTIAL MODE ONLY (random mode disabled)
     if (startDecimal || startHex) {
         // Sequential mode from command line
         if (startHex) {
@@ -1323,15 +1329,27 @@ int main(int argc, char** argv) {
             format_256bit_hex(g_baseKey, hexStr);
             printf("Resumed SEQUENTIAL from %.2fB keys\n", resumedKeys/1e9);
             printf("  Base key: 0x%s\n", hexStr);
-        } else if (resumedKeys > 0) {
-            // Resumed random mode (legacy state)
-            printf("Resumed RANDOM from %.2fB keys\n", resumedKeys/1e9);
-            g_sequentialMode = false;
         } else {
-            // Fresh random start
-            printf("Fresh start with RANDOM keys\n");
-            secure_random(h_keys, nbThread * 64);
-            g_sequentialMode = false;
+            // No valid sequential state and no start key provided
+            // RANDOM MODE IS DISABLED - require explicit start key
+            printf("\n");
+            printf("ERROR: No starting key specified and no valid sequential state file found.\n");
+            printf("\n");
+            printf("Random mode is DISABLED. You must specify a starting key for sequential search:\n");
+            printf("  -start <decimal>   Start from decimal private key value\n");
+            printf("  -startx <hex>      Start from hex private key value (with or without 0x)\n");
+            printf("\n");
+            printf("Examples:\n");
+            printf("  %s -patterns patterns.txt -startx 0x8000000000000000\n", argv[0]);
+            printf("  %s -patterns patterns.txt -start 9223372036854775808\n", argv[0]);
+            printf("\n");
+            printf("Or resume from a valid sequential state file:\n");
+            printf("  %s -patterns patterns.txt -state gpu0.state\n", argv[0]);
+            printf("\n");
+            free(h_keys);
+            cudaFree(d_keys);
+            cudaFree(d_found);
+            return 1;
         }
     }
 
@@ -1340,7 +1358,7 @@ int main(int argc, char** argv) {
     uint32_t* h_found;
     cudaMallocHost(&h_found, (1 + MAX_FOUND * 8) * 4);
 
-    printf("\nMode: %s\n", g_sequentialMode ? "SEQUENTIAL" : "RANDOM");
+    printf("\nMode: SEQUENTIAL (range search)\n");
     printf("Running: %d threads, %d patterns\n", nbThread, numPatterns);
     printf("Output: %s\n\n", outputFile);
 
@@ -1396,31 +1414,23 @@ int main(int argc, char** argv) {
                 const char* pattern = (pattern_idx >= 0 && pattern_idx < numPatterns) ?
                                        h_patterns[pattern_idx] : "?";
 
-                if (g_sequentialMode) {
-                    // Reconstruct and display private key
-                    uint64_t privkey[4];
-                    reconstruct_privkey(privkey, tid, incr, iter, isOdd != 0);
+                // Reconstruct and display private key (sequential mode)
+                uint64_t privkey[4];
+                reconstruct_privkey(privkey, tid, incr, iter, isOdd != 0);
 
-                    char hexKey[65], wifKey[60];
-                    format_256bit_hex(privkey, hexKey);
-                    privkey_to_wif(privkey, wifKey, true);
+                char hexKey[65], wifKey[60];
+                format_256bit_hex(privkey, hexKey);
+                privkey_to_wif(privkey, wifKey, true);
 
-                    fprintf(mf, "[%s] Pattern='%s' Address=%s\n", timestr, pattern, addr);
-                    fprintf(mf, "  PrivKey (HEX): 0x%s\n", hexKey);
-                    fprintf(mf, "  PrivKey (WIF): %s\n", wifKey);
-                    fprintf(mf, "  Hash160: ");
-                    for (int b = 0; b < 20; b++) fprintf(mf, "%02x", hash160[b]);
-                    fprintf(mf, "\n  tid=%u incr=%d parity=%d iter=%lu\n\n", tid, incr, isOdd, iter);
+                fprintf(mf, "[%s] Pattern='%s' Address=%s\n", timestr, pattern, addr);
+                fprintf(mf, "  PrivKey (HEX): 0x%s\n", hexKey);
+                fprintf(mf, "  PrivKey (WIF): %s\n", wifKey);
+                fprintf(mf, "  Hash160: ");
+                for (int b = 0; b < 20; b++) fprintf(mf, "%02x", hash160[b]);
+                fprintf(mf, "\n  tid=%u incr=%d parity=%d iter=%lu\n\n", tid, incr, isOdd, iter);
 
-                    printf("  %s -> Pattern: %s\n", addr, pattern);
-                    printf("    PrivKey: 0x%s\n", hexKey);
-                } else {
-                    fprintf(mf, "[%s] Pattern='%s' Address=%s Hash160=", timestr, pattern, addr);
-                    for (int b = 0; b < 20; b++) fprintf(mf, "%02x", hash160[b]);
-                    fprintf(mf, " tid=%u incr=%d parity=%d\n", tid, incr, isOdd);
-
-                    printf("  %s -> Pattern: %s\n", addr, pattern);
-                }
+                printf("  %s -> Pattern: %s\n", addr, pattern);
+                printf("    PrivKey: 0x%s\n", hexKey);
             }
             fclose(mf);
         }
@@ -1430,11 +1440,7 @@ int main(int argc, char** argv) {
 
         if (iter % 500 == 0) {
             cudaMemcpy(h_keys, d_keys, nbThread * 64, cudaMemcpyDeviceToHost);
-            if (g_sequentialMode) {
-                save_state_seq(stateFile, h_keys, nbThread, total, g_baseKey);
-            } else {
-                save_state(stateFile, h_keys, nbThread, total);
-            }
+            save_state_seq(stateFile, h_keys, nbThread, total, g_baseKey);
         }
 
         if (iter % 50 == 0) {
@@ -1449,11 +1455,7 @@ int main(int argc, char** argv) {
 
     printf("\n\nSaving state...\n");
     cudaMemcpy(h_keys, d_keys, nbThread * 64, cudaMemcpyDeviceToHost);
-    if (g_sequentialMode) {
-        save_state_seq(stateFile, h_keys, nbThread, total, g_baseKey);
-    } else {
-        save_state(stateFile, h_keys, nbThread, total);
-    }
+    save_state_seq(stateFile, h_keys, nbThread, total, g_baseKey);
     printf("Total: %.2fB keys\n", total/1e9);
 
     cudaFree(d_keys);
