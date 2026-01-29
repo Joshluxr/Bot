@@ -1005,13 +1005,15 @@ void privkey_to_wif(const uint64_t* key, char* wif, bool compressed) {
         dataLen = 34;
     }
 
-    // Simple checksum (in production, use proper SHA256)
-    uint32_t chksum = 0;
-    for (int i = 0; i < dataLen; i++) chksum = chksum * 31 + data[i];
-    data[dataLen] = (chksum >> 24) & 0xFF;
-    data[dataLen+1] = (chksum >> 16) & 0xFF;
-    data[dataLen+2] = (chksum >> 8) & 0xFF;
-    data[dataLen+3] = chksum & 0xFF;
+    // Compute checksum: first 4 bytes of double SHA256
+    uint8_t sha1[32], sha2[32];
+    sha256_host(data, dataLen, sha1);
+    sha256_host(sha1, 32, sha2);
+
+    data[dataLen] = sha2[0];
+    data[dataLen+1] = sha2[1];
+    data[dataLen+2] = sha2[2];
+    data[dataLen+3] = sha2[3];
     dataLen += 4;
 
     // Base58 encode
@@ -1040,18 +1042,107 @@ void privkey_to_wif(const uint64_t* key, char* wif, bool compressed) {
     wif[idx] = '\0';
 }
 
-// Host-side hash160 to address
+// Host-side SHA256 for checksum calculation
+static void sha256_host(const uint8_t* data, size_t len, uint8_t* hash) {
+    uint32_t h[8] = {
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    };
+
+    static const uint32_t k[64] = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+        0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+        0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+        0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+        0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+        0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+        0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+    };
+
+    // Pad message
+    uint8_t padded[128];
+    memset(padded, 0, 128);
+    memcpy(padded, data, len);
+    padded[len] = 0x80;
+
+    size_t padded_len = ((len + 9 + 63) / 64) * 64;
+    uint64_t bit_len = len * 8;
+    padded[padded_len - 8] = (bit_len >> 56) & 0xFF;
+    padded[padded_len - 7] = (bit_len >> 48) & 0xFF;
+    padded[padded_len - 6] = (bit_len >> 40) & 0xFF;
+    padded[padded_len - 5] = (bit_len >> 32) & 0xFF;
+    padded[padded_len - 4] = (bit_len >> 24) & 0xFF;
+    padded[padded_len - 3] = (bit_len >> 16) & 0xFF;
+    padded[padded_len - 2] = (bit_len >> 8) & 0xFF;
+    padded[padded_len - 1] = bit_len & 0xFF;
+
+    // Process blocks
+    for (size_t block = 0; block < padded_len; block += 64) {
+        uint32_t w[64];
+        for (int i = 0; i < 16; i++) {
+            w[i] = ((uint32_t)padded[block + i*4] << 24) |
+                   ((uint32_t)padded[block + i*4 + 1] << 16) |
+                   ((uint32_t)padded[block + i*4 + 2] << 8) |
+                   ((uint32_t)padded[block + i*4 + 3]);
+        }
+
+        for (int i = 16; i < 64; i++) {
+            uint32_t s0 = ((w[i-15] >> 7) | (w[i-15] << 25)) ^ ((w[i-15] >> 18) | (w[i-15] << 14)) ^ (w[i-15] >> 3);
+            uint32_t s1 = ((w[i-2] >> 17) | (w[i-2] << 15)) ^ ((w[i-2] >> 19) | (w[i-2] << 13)) ^ (w[i-2] >> 10);
+            w[i] = w[i-16] + s0 + w[i-7] + s1;
+        }
+
+        uint32_t a = h[0], b = h[1], c = h[2], d = h[3];
+        uint32_t e = h[4], f = h[5], g = h[6], hh = h[7];
+
+        for (int i = 0; i < 64; i++) {
+            uint32_t S1 = ((e >> 6) | (e << 26)) ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7));
+            uint32_t ch = (e & f) ^ ((~e) & g);
+            uint32_t temp1 = hh + S1 + ch + k[i] + w[i];
+            uint32_t S0 = ((a >> 2) | (a << 30)) ^ ((a >> 13) | (a << 19)) ^ ((a >> 22) | (a << 10));
+            uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+            uint32_t temp2 = S0 + maj;
+
+            hh = g; g = f; f = e; e = d + temp1;
+            d = c; c = b; b = a; a = temp1 + temp2;
+        }
+
+        h[0] += a; h[1] += b; h[2] += c; h[3] += d;
+        h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        hash[i*4] = (h[i] >> 24) & 0xFF;
+        hash[i*4 + 1] = (h[i] >> 16) & 0xFF;
+        hash[i*4 + 2] = (h[i] >> 8) & 0xFF;
+        hash[i*4 + 3] = h[i] & 0xFF;
+    }
+}
+
+// Host-side hash160 to address with CORRECT double-SHA256 checksum
 void hash160_to_address_host(const uint8_t* hash160, char* addr) {
     uint8_t data[25];
-    data[0] = 0x00;
+    data[0] = 0x00;  // Mainnet P2PKH version byte
     memcpy(data + 1, hash160, 20);
 
-    uint32_t chksum = 0;
-    for (int i = 0; i < 21; i++) chksum = chksum * 31 + data[i];
-    data[21] = (chksum >> 24) & 0xFF;
-    data[22] = (chksum >> 16) & 0xFF;
-    data[23] = (chksum >> 8) & 0xFF;
-    data[24] = chksum & 0xFF;
+    // Compute checksum: first 4 bytes of double SHA256
+    uint8_t sha1[32], sha2[32];
+    sha256_host(data, 21, sha1);
+    sha256_host(sha1, 32, sha2);
+
+    data[21] = sha2[0];
+    data[22] = sha2[1];
+    data[23] = sha2[2];
+    data[24] = sha2[3];
 
     int zeros = 0;
     while (zeros < 25 && data[zeros] == 0) zeros++;
