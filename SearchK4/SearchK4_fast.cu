@@ -990,59 +990,7 @@ void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t
 // Base58 encoding for WIF
 static const char b58_alphabet[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
-void privkey_to_wif(const uint64_t* key, char* wif, bool compressed) {
-    uint8_t data[38];
-    data[0] = 0x80;  // Mainnet prefix
-
-    // Copy key bytes (big-endian)
-    for (int i = 0; i < 32; i++) {
-        data[1 + i] = ((uint8_t*)key)[31 - i];
-    }
-
-    int dataLen = 33;
-    if (compressed) {
-        data[33] = 0x01;  // Compression flag
-        dataLen = 34;
-    }
-
-    // Compute checksum: first 4 bytes of double SHA256
-    uint8_t sha1[32], sha2[32];
-    sha256_host(data, dataLen, sha1);
-    sha256_host(sha1, 32, sha2);
-
-    data[dataLen] = sha2[0];
-    data[dataLen+1] = sha2[1];
-    data[dataLen+2] = sha2[2];
-    data[dataLen+3] = sha2[3];
-    dataLen += 4;
-
-    // Base58 encode
-    int zeros = 0;
-    while (zeros < dataLen && data[zeros] == 0) zeros++;
-
-    uint8_t temp[64];
-    int tempLen = 0;
-
-    for (int i = 0; i < dataLen; i++) {
-        int carry = data[i];
-        for (int j = 0; j < tempLen; j++) {
-            carry += 256 * temp[j];
-            temp[j] = carry % 58;
-            carry /= 58;
-        }
-        while (carry > 0) {
-            temp[tempLen++] = carry % 58;
-            carry /= 58;
-        }
-    }
-
-    int idx = 0;
-    for (int i = 0; i < zeros; i++) wif[idx++] = '1';
-    for (int i = tempLen - 1; i >= 0; i--) wif[idx++] = b58_alphabet[temp[i]];
-    wif[idx] = '\0';
-}
-
-// Host-side SHA256 for checksum calculation
+// Host-side SHA256 for checksum calculation (must be defined before functions that use it)
 static void sha256_host(const uint8_t* data, size_t len, uint8_t* hash) {
     uint32_t h[8] = {
         0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
@@ -1126,6 +1074,58 @@ static void sha256_host(const uint8_t* data, size_t len, uint8_t* hash) {
         hash[i*4 + 2] = (h[i] >> 8) & 0xFF;
         hash[i*4 + 3] = h[i] & 0xFF;
     }
+}
+
+void privkey_to_wif(const uint64_t* key, char* wif, bool compressed) {
+    uint8_t data[38];
+    data[0] = 0x80;  // Mainnet prefix
+
+    // Copy key bytes (big-endian)
+    for (int i = 0; i < 32; i++) {
+        data[1 + i] = ((uint8_t*)key)[31 - i];
+    }
+
+    int dataLen = 33;
+    if (compressed) {
+        data[33] = 0x01;  // Compression flag
+        dataLen = 34;
+    }
+
+    // Compute checksum: first 4 bytes of double SHA256
+    uint8_t sha1[32], sha2[32];
+    sha256_host(data, dataLen, sha1);
+    sha256_host(sha1, 32, sha2);
+
+    data[dataLen] = sha2[0];
+    data[dataLen+1] = sha2[1];
+    data[dataLen+2] = sha2[2];
+    data[dataLen+3] = sha2[3];
+    dataLen += 4;
+
+    // Base58 encode
+    int zeros = 0;
+    while (zeros < dataLen && data[zeros] == 0) zeros++;
+
+    uint8_t temp[64];
+    int tempLen = 0;
+
+    for (int i = 0; i < dataLen; i++) {
+        int carry = data[i];
+        for (int j = 0; j < tempLen; j++) {
+            carry += 256 * temp[j];
+            temp[j] = carry % 58;
+            carry /= 58;
+        }
+        while (carry > 0) {
+            temp[tempLen++] = carry % 58;
+            carry /= 58;
+        }
+    }
+
+    int idx = 0;
+    for (int i = 0; i < zeros; i++) wif[idx++] = '1';
+    for (int i = tempLen - 1; i >= 0; i--) wif[idx++] = b58_alphabet[temp[i]];
+    wif[idx] = '\0';
 }
 
 // Host-side hash160 to address with CORRECT double-SHA256 checksum
