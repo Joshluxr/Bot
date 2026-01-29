@@ -6,7 +6,7 @@ This document details all critical bugs found and fixed during the development o
 
 SearchK4 is designed to search for Bitcoin private keys that produce addresses matching specific prefixes. It uses 4x NVIDIA RTX 5090 GPUs, each capable of ~1.7 billion keys/second.
 
-**Total bugs fixed: 5 major issues**
+**Total bugs fixed: 6 major issues**
 
 ---
 
@@ -305,10 +305,112 @@ Result:
 
 ---
 
+## Bug #6: Invalid Address Checksums (v1.5)
+
+### Symptom
+Found addresses had **invalid checksums** when verified externally:
+```
+Address: 1FeexV6bAj3wcS8docGuw6Wo8dr3jvjKKP
+Checksum: INVALID (got 032714d2, expected 8177dc66)
+```
+
+The addresses displayed in results were not valid Bitcoin addresses.
+
+### Location
+`SearchK4_fast.cu` - `hash160_to_address_host()` and `privkey_to_wif()` functions
+
+### Root Cause
+The host-side address and WIF generation functions used a **fake checksum** instead of proper Bitcoin double-SHA256:
+
+```cpp
+// WRONG - Simple hash, NOT Bitcoin checksum
+uint32_t chksum = 0;
+for (int i = 0; i < 21; i++) chksum = chksum * 31 + data[i];
+data[21] = (chksum >> 24) & 0xFF;
+data[22] = (chksum >> 16) & 0xFF;
+data[23] = (chksum >> 8) & 0xFF;
+data[24] = chksum & 0xFF;
+```
+
+Bitcoin addresses use **double SHA256** for the checksum (first 4 bytes of SHA256(SHA256(payload))).
+
+### Fix
+Implemented a proper SHA256 function and used double-SHA256 for checksums:
+
+```cpp
+// Host-side SHA256 implementation
+static void sha256_host(const uint8_t* data, size_t len, uint8_t* hash) {
+    // Full SHA256 implementation with proper padding and compression
+    // ...
+}
+
+// CORRECT - Bitcoin standard checksum
+void hash160_to_address_host(const uint8_t* hash160, char* addr) {
+    uint8_t data[25];
+    data[0] = 0x00;  // Mainnet P2PKH version
+    memcpy(data + 1, hash160, 20);
+
+    // Double SHA256 checksum
+    uint8_t sha1[32], sha2[32];
+    sha256_host(data, 21, sha1);
+    sha256_host(sha1, 32, sha2);
+
+    data[21] = sha2[0];
+    data[22] = sha2[1];
+    data[23] = sha2[2];
+    data[24] = sha2[3];
+    // ... base58 encode ...
+}
+```
+
+Same fix applied to `privkey_to_wif()` for WIF format private keys.
+
+### Verification
+```
+Input hash160: a0b0d60e5991578ed37cbda2b17d8b2ce23ab295
+Generated:     1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF
+Expected:      1FeexV6bAHb8ybZjqQMjJrcCrHGW9sb6uF
+Match:         YES
+```
+
+### Impact
+**All addresses displayed before this fix had invalid checksums.** The GPU search still worked correctly (it matches on hash160 prefix, not address string), but the displayed addresses in result files could not be used directly - they would be rejected by wallets and block explorers.
+
+---
+
+## Summary Table
+
+| Bug | Version | Location | Symptom | Fix | Impact |
+|-----|---------|----------|---------|-----|--------|
+| Infinite loop in mod_mul | v1.0 | `mod_mul()` | Program hangs | Proper secp256k1 reduction | Couldn't run at all |
+| Slow inversion | v1.0 | `init_keys_from_start()` | 1 key/sec | Batch inversion + Jacobian coords | 65,000x speedup |
+| Memory layout | v1.1 | `init_keys_from_start()` | Invalid keys | Strided layout | All keys invalid |
+| Y parity | v1.3 | `reconstruct_privkey()` | Wrong key for 03-prefix | Check parity, negate if needed | 50% keys wrong |
+| **Thread stride** | **v1.4** | `init_keys_from_start()` line 864 | **Can't find target** | **`offset * STEP_SIZE`** | **1000x slower** |
+| **Invalid checksum** | **v1.5** | `hash160_to_address_host()` | **Invalid addresses** | **Double SHA256 checksum** | **Display only** |
+
+---
+
+## Files Modified
+
+1. **SearchK4_fast.cu** - Main CUDA implementation
+   - `mod_mul()` - Fixed reduction algorithm
+   - `init_keys_from_start()` - Fixed memory layout and thread stride
+   - `reconstruct_privkey()` - Fixed Y parity handling
+   - `sha256_host()` - NEW: Host-side SHA256 implementation
+   - `hash160_to_address_host()` - Fixed to use proper checksum
+   - `privkey_to_wif()` - Fixed to use proper checksum
+
+2. **CPUGroup.h** - Precomputed generator point table (512 entries)
+
+3. **patterns.txt** - Search patterns including `1FeexV6bA`
+
+---
+
 ## Current Configuration
 
 - **GPUs**: 4x NVIDIA RTX 5090
 - **Threads**: 65,536 per GPU
 - **Keys per iteration**: 67,108,864 (65,536 × 1,024)
-- **Speed**: ~1.7-1.8 GKey/s per GPU, ~6.7 GKey/s total
+- **Speed**: ~1.9-2.0 GKey/s per GPU, ~7.6 GKey/s total
 - **Patterns**: 7 prefixes (9-11 characters)
