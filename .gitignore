@@ -1,0 +1,6 @@
+# Large K3 data files
+server1_candidates.csv
+server2_candidates.csv
+k3_all_addresses.csv
+k3_all_addresses.txt
+*.tar.gz
