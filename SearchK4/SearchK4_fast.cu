@@ -984,10 +984,20 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
     scalar_mult_G(seqDeltaX, seqDeltaY, delta_scalar);
 
     // Copy to device constants
-    cudaMemcpyToSymbol(d_seqDeltaX, seqDeltaX, 32);
-    cudaMemcpyToSymbol(d_seqDeltaY, seqDeltaY, 32);
+    cudaError_t err;
+    err = cudaMemcpyToSymbol(d_seqDeltaX, seqDeltaX, 32);
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR copying seqDeltaX: %s\n", cudaGetErrorString(err));
+    }
+    err = cudaMemcpyToSymbol(d_seqDeltaY, seqDeltaY, 32);
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR copying seqDeltaY: %s\n", cudaGetErrorString(err));
+    }
     int useSeq = 1;
-    cudaMemcpyToSymbol(d_useSeqDelta, &useSeq, sizeof(int));
+    err = cudaMemcpyToSymbol(d_useSeqDelta, &useSeq, sizeof(int));
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR copying useSeqDelta: %s\n", cudaGetErrorString(err));
+    }
 
     uint64_t totalDelta = (uint64_t)nbThread * STEP_SIZE;
     printf("  Sequential mode: each iteration advances all threads by %lu keys\n", totalDelta);
@@ -1367,17 +1377,39 @@ int main(int argc, char** argv) {
     printf("GPU %d: %s (SM %d.%d, %d MPs)\n", gpuId, prop.name, prop.major, prop.minor, prop.multiProcessorCount);
 
     // Copy patterns to GPU constant memory
-    cudaMemcpyToSymbol(d_patterns, h_patterns, sizeof(h_patterns));
-    cudaMemcpyToSymbol(d_pattern_lens, h_lens, sizeof(h_lens));
-    cudaMemcpyToSymbol(d_num_patterns, &numPatterns, sizeof(int));
+    cudaError_t err;
+    err = cudaMemcpyToSymbol(d_patterns, h_patterns, sizeof(h_patterns));
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR copying patterns: %s\n", cudaGetErrorString(err));
+        return 1;
+    }
+    err = cudaMemcpyToSymbol(d_pattern_lens, h_lens, sizeof(h_lens));
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR copying pattern lengths: %s\n", cudaGetErrorString(err));
+        return 1;
+    }
+    err = cudaMemcpyToSymbol(d_num_patterns, &numPatterns, sizeof(int));
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR copying num_patterns: %s\n", cudaGetErrorString(err));
+        return 1;
+    }
+    printf("Successfully copied %d patterns to GPU constant memory\n", numPatterns);
 
     int nbThread = 65536;
     g_nbThread = nbThread;
     uint64_t* d_keys;
     uint32_t* d_found;
 
-    cudaMalloc(&d_keys, nbThread * 64);
-    cudaMalloc(&d_found, (1 + MAX_FOUND * 8) * 4);
+    err = cudaMalloc(&d_keys, nbThread * 64);
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR allocating d_keys: %s\n", cudaGetErrorString(err));
+        return 1;
+    }
+    err = cudaMalloc(&d_found, (1 + MAX_FOUND * 8) * 4);
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR allocating d_found: %s\n", cudaGetErrorString(err));
+        return 1;
+    }
 
     uint64_t* h_keys = (uint64_t*)malloc(nbThread * 64);
     uint64_t resumedKeys = 0;

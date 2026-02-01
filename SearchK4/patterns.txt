@@ -1,13 +1,62 @@
 # SearchK4 Vanity Patterns
 # One pattern per line, must start with '1' for mainnet
 
-# Famous addresses
-1FeexV6bAH
-1A1zP1eP5Q
+# Short prefixes (faster to find)
+1FvUkW
+138EM
+1A1zP1
+1FeexV6
 
-# Custom patterns
+# Medium prefixes
 1ARWCREnm
 1FvUkW8thc
 138EMxwMt
+1A1zP1eP5Q
+1FeexV6bAH
 1VeMPNgEtQ
 1NY5KheH3ko
+
+# Special patterns
+111111111
+12c6DSiU4
+1HLoD9E4S
+1FvzCLoTP
+15ubicBBW
+1JfbZRwdD
+1GkQmKAmH
+16LoW7y83
+1J6PYEzr4
+12cbQLTFM
+15yN7NPEp
+1dyoBoF5v
+1PYELM7jX
+17abzUBJr
+1DMGtVnRr
+1CYG7y3fu
+16kktFTqs
+1LPBetDzQ
+1DJkjSqW9
+1P9VmZogi
+15ubjFzmW
+1Fi7o3BKM
+1DmKBaveG
+1AqC4PhwY
+1JXLFv719
+15VF3MsCz
+1KDnp5D9s
+1G43MvhzC
+18a3JX7ZZ
+1GnYgH4V4
+17x23dNjX
+1PHB5i7JM
+1Bw7RG9a1
+1MKRkcXG7
+1BTsxjF9r
+16bo8EmUn
+1NHHWnZKT
+1DpJP16GX
+1DpSDwF12
+1KzvBTUbd
+1Lx9PbLow
+1Aa4Ztvmu
+1QD3acY5q
