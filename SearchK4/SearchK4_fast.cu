@@ -596,12 +596,12 @@ __device__ void OutputMatchK4(uint32_t* out, uint32_t tid, int32_t incr, uint32_
 }
 
 // Check compressed addresses (uses symmetry - both Y and -Y checked)
-// For uncompressed: yNegated indicates if py is the negated Y (needs to be flipped back)
+// Also checks BOTH uncompressed addresses (Y and -Y) for complete coverage
 __device__ __noinline__ void CheckHashCompSymK4(
     uint64_t* px, uint64_t* py, uint32_t tid, int32_t incr,
-    uint32_t maxFound, uint32_t* out, bool yNegated = false
+    uint32_t maxFound, uint32_t* out
 ) {
-    uint32_t h1[5], h2[5], h3[5];
+    uint32_t h1[5], h2[5], h_uncomp1[5], h_uncomp2[5];
     char addr[40];
     int matched_idx;
 
@@ -616,24 +616,23 @@ __device__ __noinline__ void CheckHashCompSymK4(
         OutputMatchK4(out, tid, -incr, h2, matched_idx, 1);
     }
 
-    // Check uncompressed address
-    // If yNegated is true, we need to negate py back to get the real Y
-    uint64_t realY[4];
-    if (yNegated) {
-        // Negate Y: realY = P - py (where P is secp256k1 field prime)
-        // P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
-        ModNeg256(realY, py);
-    } else {
-        Load256(realY, py);
+    // Check BOTH uncompressed addresses (Y and -Y)
+    // This ensures complete coverage since uncompressed addresses use the full Y coordinate
+
+    // First: check with current py
+    _GetHash160(px, py, (uint8_t*)h_uncomp1);
+    if (CheckVanityPatternsK4(h_uncomp1, &matched_idx, addr)) {
+        // parity=2 indicates uncompressed with current Y
+        OutputMatchK4(out, tid, incr, h_uncomp1, matched_idx, 2);
     }
 
-    _GetHash160(px, realY, (uint8_t*)h3);
-
-    if (CheckVanityPatternsK4(h3, &matched_idx, addr)) {
-        // For uncompressed, use parity=2 to distinguish from compressed
-        // incr sign indicates the key offset direction
-        int32_t actualIncr = yNegated ? -incr : incr;
-        OutputMatchK4(out, tid, actualIncr, h3, matched_idx, 2);
+    // Second: check with negated py (-Y)
+    uint64_t negY[4];
+    ModNeg256(negY, py);
+    _GetHash160(px, negY, (uint8_t*)h_uncomp2);
+    if (CheckVanityPatternsK4(h_uncomp2, &matched_idx, addr)) {
+        // parity=3 indicates uncompressed with negated Y (corresponds to key n-k)
+        OutputMatchK4(out, tid, -incr, h_uncomp2, matched_idx, 3);
     }
 }
 
@@ -682,7 +681,7 @@ __device__ void ComputeKeysK4(
 
         _ModInvGrouped(dx, subp);
 
-        CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2, maxFound, out, false);
+        CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2, maxFound, out);
 
         ModNeg256(pyn, py);
 
@@ -698,7 +697,7 @@ __device__ void ComputeKeysK4(
             _ModMult(py, _s);
             ModSub256(py, Gy[i]);
 
-            CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2 + (i+1), maxFound, out, false);
+            CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2 + (i+1), maxFound, out);
 
             Load256(px, sx);
             ModSub256(dy, pyn, Gy[i]);
@@ -711,8 +710,7 @@ __device__ void ComputeKeysK4(
             ModSub256(py, Gy[i]);
             ModNeg256(py, py);
 
-            // yNegated=true because py was negated for compressed symmetry optimization
-            CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2 - (i+1), maxFound, out, true);
+            CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2 - (i+1), maxFound, out);
         }
 
         Load256(px, sx);
@@ -727,8 +725,7 @@ __device__ void ComputeKeysK4(
         _ModMult(py, _s);
         ModSub256(py, Gy[i]);
         ModNeg256(py, py);
-        // yNegated=true because py was negated for compressed symmetry optimization
-        CheckHashCompSymK4(px, py, tid, j*GRP_SIZE, maxFound, out, true);
+        CheckHashCompSymK4(px, py, tid, j*GRP_SIZE, maxFound, out);
 
         i++;
         Load256(px, sx);
@@ -1076,7 +1073,7 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
 }
 
 // Reconstruct private key from match info
-// parity: 0=even compressed, 1=odd compressed, 2=uncompressed
+// parity: 0=even compressed, 1=odd compressed, 2=uncompressed, 3=uncompressed negated Y
 void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t iter, uint8_t parity) {
     // SEQUENTIAL MODE with proper thread spacing:
     // - Thread tid starts at key baseKey + tid * STEP_SIZE
@@ -1084,11 +1081,11 @@ void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t
     // - After iter iterations: thread is at key baseKey + tid*STEP_SIZE + iter*nbThread*STEP_SIZE
     //
     // The GPU checks compressed (02+X and 03+X) and uncompressed (04+X+Y) forms.
-    // parity indicates which form matched: 0=even, 1=odd, 2=uncompressed
+    // parity indicates which form matched: 0=even, 1=odd, 2=uncompressed, 3=uncompressed negated
 
-    // For odd reported parity (compressed), the kernel stored -incr, so flip it back
+    // For odd reported parity (compressed) or negated uncompressed, the kernel stored -incr
     // For uncompressed (parity=2), incr is not negated
-    int32_t actualIncr = (parity == 1) ? -incr : incr;
+    int32_t actualIncr = (parity == 1 || parity == 3) ? -incr : incr;
 
     // The kernel passes incr such that:
     //   actualIncr = GRP_SIZE/2 means offset 0 from starting point
@@ -1124,9 +1121,15 @@ void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t
         sub256(basePrivkey, basePrivkey, tmp);
     }
 
-    // For uncompressed addresses, we use the key directly (no parity adjustment needed)
+    // For uncompressed addresses with normal Y, use the key directly
     if (parity == 2) {
         memcpy(privkey, basePrivkey, 32);
+        return;
+    }
+
+    // For uncompressed addresses with negated Y, negate the key mod N
+    if (parity == 3) {
+        sub256(privkey, SECP_N, basePrivkey);
         return;
     }
 
@@ -1645,7 +1648,7 @@ int main(int argc, char** argv) {
 
                 char hexKey[65], wifKey[60];
                 format_256bit_hex(privkey, hexKey);
-                bool isCompressed = (isOdd != 2);  // parity 0,1 = compressed, 2 = uncompressed
+                bool isCompressed = (isOdd == 0 || isOdd == 1);  // parity 0,1 = compressed, 2,3 = uncompressed
                 privkey_to_wif(privkey, wifKey, isCompressed);
 
                 const char* addrType = isCompressed ? "compressed" : "uncompressed";
