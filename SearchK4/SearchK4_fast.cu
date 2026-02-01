@@ -535,7 +535,7 @@ __device__ __noinline__ void _GetAddress(int type, uint32_t *hash, char *b58Add)
     A[24] = ((uint8_t *)s)[0];
 
     while (addPtr[0] == 0) {
-        b58Add[retPos++] = '1';
+        b58Add[retPos++] = 0x31;  // ASCII '1' - use explicit hex to avoid CUDA char literal issues
         addPtr++;
     }
     int length = 25 - retPos;
@@ -637,6 +637,11 @@ __device__ __noinline__ void CheckHashCompSymK4(
     }
 }
 
+// Debug counter - incremented atomically to trace execution
+__device__ uint32_t g_debugCounter = 0;
+__device__ uint64_t g_debugPx[4];
+__device__ uint32_t g_debugHash[5];
+
 __device__ void ComputeKeysK4(
     uint32_t mode, uint64_t* startx, uint64_t* starty,
     uint32_t maxFound, uint32_t* out
@@ -651,6 +656,17 @@ __device__ void ComputeKeysK4(
     Load256A(sy, starty);
     Load256(px, sx);
     Load256(py, sy);
+
+    // DEBUG: Thread 0 stores its starting point once
+    if (tid == 0) {
+        uint32_t cnt = atomicAdd(&g_debugCounter, 1);
+        if (cnt == 0) {
+            g_debugPx[0] = px[0];
+            g_debugPx[1] = px[1];
+            g_debugPx[2] = px[2];
+            g_debugPx[3] = px[3];
+        }
+    }
 
     for (uint32_t j = 0; j < STEP_SIZE / GRP_SIZE; j++) {
         uint32_t i;
@@ -985,49 +1001,61 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
         fflush(stdout);
     }
 
+    printf("\n  Freeing batch buffers...\n"); fflush(stdout);
     free(dx_batch);
     free(inv_batch);
     free(iGx_batch);
     free(iGy_batch);
+    printf("  Buffers freed.\n"); fflush(stdout);
 
     double elapsed = difftime(time(NULL), start_time);
     if (elapsed < 1) elapsed = 1;
     printf("\n  Done! %d threads in %.1fs (%.0f threads/sec)\n", nbThread, elapsed, nbThread / elapsed);
+    fflush(stdout);
 
     // Compute the sequential delta: (nbThread - 1) * STEP_SIZE * G
     // The kernel already advances by STEP_SIZE * G internally,
     // so we need the ADDITIONAL delta to reach total advancement of nbThread * STEP_SIZE * G
-    printf("  Computing sequential delta point...\n");
+    printf("  Computing sequential delta point...\n"); fflush(stdout);
 
     // delta_scalar = (nbThread - 1) * STEP_SIZE
     uint64_t delta_scalar[4] = {0, 0, 0, 0};
     uint64_t delta_val = (uint64_t)(nbThread - 1) * STEP_SIZE;
     delta_scalar[0] = delta_val;
+    printf("  delta_val = %lu\n", delta_val); fflush(stdout);
 
     // Compute delta_point = delta_scalar * G
     uint64_t seqDeltaX[4], seqDeltaY[4];
+    printf("  Calling scalar_mult_G...\n"); fflush(stdout);
     scalar_mult_G(seqDeltaX, seqDeltaY, delta_scalar);
+    printf("  scalar_mult_G done\n"); fflush(stdout);
 
     // Copy to device constants
     cudaError_t err;
+    printf("  Copying d_seqDeltaX...\n"); fflush(stdout);
     err = cudaMemcpyToSymbol(d_seqDeltaX, seqDeltaX, 32);
     if (err != cudaSuccess) {
         printf("CUDA ERROR copying seqDeltaX: %s\n", cudaGetErrorString(err));
     }
+    printf("  Copying d_seqDeltaY...\n"); fflush(stdout);
     err = cudaMemcpyToSymbol(d_seqDeltaY, seqDeltaY, 32);
     if (err != cudaSuccess) {
         printf("CUDA ERROR copying seqDeltaY: %s\n", cudaGetErrorString(err));
     }
     int useSeq = 1;
+    printf("  Copying d_useSeqDelta...\n"); fflush(stdout);
     err = cudaMemcpyToSymbol(d_useSeqDelta, &useSeq, sizeof(int));
     if (err != cudaSuccess) {
         printf("CUDA ERROR copying useSeqDelta: %s\n", cudaGetErrorString(err));
     }
 
     uint64_t totalDelta = (uint64_t)nbThread * STEP_SIZE;
-    printf("  Sequential mode: each iteration advances all threads by %lu keys\n", totalDelta);
-    printf("  Keys covered after N iterations: N * %lu\n", totalDelta);
-    printf("  Example: iter 1 covers first %lu keys\n", totalDelta);
+    printf("  Copied all delta symbols\n"); fflush(stdout);
+    printf("  totalDelta = %lu\n", totalDelta); fflush(stdout);
+    printf("  Sequential mode: each iteration advances all threads by %lu keys\n", totalDelta); fflush(stdout);
+    printf("  Keys covered after N iterations: N * %lu\n", totalDelta); fflush(stdout);
+    printf("  Example: iter 1 covers first %lu keys\n", totalDelta); fflush(stdout);
+    printf("  init_keys_from_start complete\n"); fflush(stdout);
 
     g_sequentialMode = true;
     g_nbThread = nbThread;
@@ -1406,7 +1434,7 @@ int main(int argc, char** argv) {
     cudaSetDevice(gpuId);
 
     // Increase stack size limit for larger kernels with uncompressed address support
-    cudaDeviceSetLimit(cudaLimitStackSize, 40 * 1024);  // 40KB per thread
+    cudaDeviceSetLimit(cudaLimitStackSize, 36 * 1024);  // 36KB per thread (kernel needs ~33KB)
 
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, gpuId);
@@ -1431,7 +1459,7 @@ int main(int argc, char** argv) {
     }
     printf("Successfully copied %d patterns to GPU constant memory\n", numPatterns);
 
-    int nbThread = 32768;  // Balanced for uncompressed + compressed address support
+    int nbThread = 64;  // Single block for debugging
     g_nbThread = nbThread;
     uint64_t* d_keys;
     uint32_t* d_found;
@@ -1495,28 +1523,49 @@ int main(int argc, char** argv) {
         }
     }
 
+    printf("Copying keys to device...\n"); fflush(stdout);
     cudaMemcpy(d_keys, h_keys, nbThread * 64, cudaMemcpyHostToDevice);
+    printf("Keys copied\n"); fflush(stdout);
 
     uint32_t* h_found;
+    printf("Allocating h_found...\n"); fflush(stdout);
     cudaMallocHost(&h_found, (1 + MAX_FOUND * 8) * 4);
+    printf("h_found allocated\n"); fflush(stdout);
 
-    printf("\nMode: SEQUENTIAL (range search)\n");
-    printf("Running: %d threads, %d patterns\n", nbThread, numPatterns);
-    printf("Output: %s\n\n", outputFile);
+    printf("\nMode: SEQUENTIAL (range search)\n"); fflush(stdout);
+    printf("Running: %d threads, %d patterns\n", nbThread, numPatterns); fflush(stdout);
+    printf("Output: %s\n\n", outputFile); fflush(stdout);
 
     time_t start = time(NULL);
     uint64_t total = resumedKeys, iter = 0;
 
+    printf("Entering main loop...\n"); fflush(stdout);
     while (running) {
+        printf("Clearing d_found...\n"); fflush(stdout);
         cudaMemset(d_found, 0, 4);
+        printf("Launching kernel...\n"); fflush(stdout);
         searchK4_kernel<<<nbThread/NB_THREAD_PER_GROUP, NB_THREAD_PER_GROUP>>>(
             0, d_keys, MAX_FOUND, d_found);
+        printf("Waiting for kernel...\n"); fflush(stdout);
         cudaDeviceSynchronize();
+        printf("Kernel complete\n"); fflush(stdout);
 
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess) {
             printf("\nCUDA Error: %s\n", cudaGetErrorString(err));
             break;
+        }
+
+        // DEBUG: Print thread 0's starting point on first iteration
+        if (iter == 0) {
+            uint32_t debugCount;
+            uint64_t debugPx[4];
+            cudaMemcpyFromSymbol(&debugCount, g_debugCounter, sizeof(uint32_t));
+            cudaMemcpyFromSymbol(debugPx, g_debugPx, sizeof(debugPx));
+            printf("\n[DEBUG] iter=0, debugCount=%u\n", debugCount);
+            printf("[DEBUG] Thread 0 px = %016lx %016lx %016lx %016lx\n",
+                   debugPx[3], debugPx[2], debugPx[1], debugPx[0]);
+            printf("[DEBUG] Expected G  = 79be667ef9dcbbac 55a06295ce870b07 029bfcdb2dce28d9 59f2815b16f81798\n");
         }
 
         cudaMemcpy(h_found, d_found, 4, cudaMemcpyDeviceToHost);
