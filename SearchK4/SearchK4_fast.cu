@@ -1411,6 +1411,7 @@ int main(int argc, char** argv) {
     char* startDecimal = NULL;
     char* startHex = NULL;
     int gpuId = 0;
+    int threadCount = 0;  // 0 = use default
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-patterns") && i+1 < argc) patternsFile = argv[++i];
@@ -1419,6 +1420,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "-o") && i+1 < argc) outputFile = argv[++i];
         else if (!strcmp(argv[i], "-start") && i+1 < argc) startDecimal = argv[++i];
         else if (!strcmp(argv[i], "-startx") && i+1 < argc) startHex = argv[++i];
+        else if (!strcmp(argv[i], "-threads") && i+1 < argc) threadCount = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             print_usage(argv[0]);
             return 0;
@@ -1476,8 +1478,11 @@ int main(int argc, char** argv) {
     }
     printf("Successfully copied %d patterns to GPU constant memory\n", numPatterns);
 
-    int nbThread = 16384;  // Production: 256 blocks * 64 threads
+    // Default to 1024 threads to avoid kernel hang with uncompressed fix
+    // Can be overridden with -threads parameter
+    int nbThread = (threadCount > 0) ? threadCount : 1024;
     g_nbThread = nbThread;
+    printf("Using %d threads\n", nbThread);
     uint64_t* d_keys;
     uint32_t* d_found;
     uint64_t* d_dx;     // Global memory for dx arrays (avoids stack overflow)
