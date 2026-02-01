@@ -12,6 +12,7 @@ endif
 NVCC_FLAGS = -O3 -std=c++14 \
     -gencode=arch=compute_$(CCAP),code=sm_$(CCAP) \
     --ptxas-options=-v \
+    -maxrregcount=64 \
     -I. \
     -lineinfo
 

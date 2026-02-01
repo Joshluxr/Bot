@@ -24,7 +24,7 @@
 #include "GPUHash.h"
 #include "CPUGroup.h"
 
-#define NB_THREAD_PER_GROUP 512
+#define NB_THREAD_PER_GROUP 64
 #define MAX_FOUND 65536
 #define STEP_SIZE 1024
 #define K4_MAX_PATTERNS 256
@@ -75,7 +75,7 @@ static const uint64_t SECP_GY[4] = {
 // Global base key for private key reconstruction
 static uint64_t g_baseKey[4] = {0, 0, 0, 0};
 static bool g_sequentialMode = false;
-static int g_nbThread = 65536;
+static int g_nbThread = 16384;
 
 // 256-bit comparison
 static int cmp256(const uint64_t* a, const uint64_t* b) {
@@ -596,13 +596,14 @@ __device__ void OutputMatchK4(uint32_t* out, uint32_t tid, int32_t incr, uint32_
 }
 
 __device__ __noinline__ void CheckHashCompSymK4(
-    uint64_t* px, uint32_t tid, int32_t incr,
+    uint64_t* px, uint64_t* py, uint32_t tid, int32_t incr,
     uint32_t maxFound, uint32_t* out
 ) {
-    uint32_t h1[5], h2[5];
+    uint32_t h1[5], h2[5], h_uncomp[5];
     char addr[40];
     int matched_idx;
 
+    // Check compressed addresses (even and odd Y parity)
     _GetHash160CompSym(px, (uint8_t*)h1, (uint8_t*)h2);
 
     if (CheckVanityPatternsK4(h1, &matched_idx, addr)) {
@@ -611,6 +612,14 @@ __device__ __noinline__ void CheckHashCompSymK4(
 
     if (CheckVanityPatternsK4(h2, &matched_idx, addr)) {
         OutputMatchK4(out, tid, -incr, h2, matched_idx, 1);
+    }
+
+    // Check uncompressed address (uses both X and Y)
+    _GetHash160(px, py, (uint8_t*)h_uncomp);
+
+    if (CheckVanityPatternsK4(h_uncomp, &matched_idx, addr)) {
+        // Use parity=2 to indicate uncompressed
+        OutputMatchK4(out, tid, incr, h_uncomp, matched_idx, 2);
     }
 }
 
@@ -638,7 +647,7 @@ __device__ void ComputeKeysK4(
 
         _ModInvGrouped(dx);
 
-        CheckHashCompSymK4(px, tid, j*GRP_SIZE + GRP_SIZE/2, maxFound, out);
+        CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2, maxFound, out);
 
         ModNeg256(pyn, py);
 
@@ -654,7 +663,7 @@ __device__ void ComputeKeysK4(
             _ModMult(py, _s);
             ModSub256(py, Gy[i]);
 
-            CheckHashCompSymK4(px, tid, j*GRP_SIZE + GRP_SIZE/2 + (i+1), maxFound, out);
+            CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2 + (i+1), maxFound, out);
 
             Load256(px, sx);
             ModSub256(dy, pyn, Gy[i]);
@@ -667,7 +676,7 @@ __device__ void ComputeKeysK4(
             ModSub256(py, Gy[i]);
             ModNeg256(py, py);
 
-            CheckHashCompSymK4(px, tid, j*GRP_SIZE + GRP_SIZE/2 - (i+1), maxFound, out);
+            CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2 - (i+1), maxFound, out);
         }
 
         Load256(px, sx);
@@ -682,7 +691,7 @@ __device__ void ComputeKeysK4(
         _ModMult(py, _s);
         ModSub256(py, Gy[i]);
         ModNeg256(py, py);
-        CheckHashCompSymK4(px, tid, j*GRP_SIZE, maxFound, out);
+        CheckHashCompSymK4(px, py, tid, j*GRP_SIZE, maxFound, out);
 
         i++;
         Load256(px, sx);
@@ -1009,18 +1018,19 @@ void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, 
 }
 
 // Reconstruct private key from match info
-// reportedOdd: if true, the GPU matched on the 03+X (odd Y) compressed form
-void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t iter, bool reportedOdd) {
+// parity: 0=even compressed, 1=odd compressed, 2=uncompressed
+void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t iter, uint8_t parity) {
     // SEQUENTIAL MODE with proper thread spacing:
     // - Thread tid starts at key baseKey + tid * STEP_SIZE
     // - Each iteration covers STEP_SIZE keys, then advances by nbThread * STEP_SIZE
     // - After iter iterations: thread is at key baseKey + tid*STEP_SIZE + iter*nbThread*STEP_SIZE
     //
-    // The GPU checks both compressed forms (02+X and 03+X).
-    // reportedOdd indicates which form matched.
+    // The GPU checks compressed (02+X and 03+X) and uncompressed (04+X+Y) forms.
+    // parity indicates which form matched: 0=even, 1=odd, 2=uncompressed
 
-    // For odd reported parity, the kernel stored -incr, so flip it back
-    int32_t actualIncr = reportedOdd ? -incr : incr;
+    // For odd reported parity (compressed), the kernel stored -incr, so flip it back
+    // For uncompressed (parity=2), incr is not negated
+    int32_t actualIncr = (parity == 1) ? -incr : incr;
 
     // The kernel passes incr such that:
     //   actualIncr = GRP_SIZE/2 means offset 0 from starting point
@@ -1056,10 +1066,17 @@ void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t
         sub256(basePrivkey, basePrivkey, tmp);
     }
 
-    // Compute Y parity of basePrivkey * G
+    // For uncompressed addresses, we use the key directly (no parity adjustment needed)
+    if (parity == 2) {
+        memcpy(privkey, basePrivkey, 32);
+        return;
+    }
+
+    // For compressed: Compute Y parity of basePrivkey * G
     uint64_t px[4], py[4];
     scalar_mult_G(px, py, basePrivkey);
     bool actualYOdd = (py[0] & 1) != 0;
+    bool reportedOdd = (parity == 1);
 
     // If actual Y parity matches reported parity, use basePrivkey
     // Otherwise, use N - basePrivkey
@@ -1372,6 +1389,9 @@ int main(int argc, char** argv) {
     signal(SIGTERM, sighandler);
     cudaSetDevice(gpuId);
 
+    // Increase stack size limit for larger kernels with uncompressed address support
+    cudaDeviceSetLimit(cudaLimitStackSize, 40 * 1024);  // 40KB per thread
+
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, gpuId);
     printf("GPU %d: %s (SM %d.%d, %d MPs)\n", gpuId, prop.name, prop.major, prop.minor, prop.multiProcessorCount);
@@ -1395,7 +1415,7 @@ int main(int argc, char** argv) {
     }
     printf("Successfully copied %d patterns to GPU constant memory\n", numPatterns);
 
-    int nbThread = 65536;
+    int nbThread = 32768;  // Balanced for uncompressed + compressed address support
     g_nbThread = nbThread;
     uint64_t* d_keys;
     uint32_t* d_found;
@@ -1522,13 +1542,15 @@ int main(int argc, char** argv) {
 
                 // Reconstruct and display private key (sequential mode)
                 uint64_t privkey[4];
-                reconstruct_privkey(privkey, tid, incr, iter, isOdd != 0);
+                reconstruct_privkey(privkey, tid, incr, iter, isOdd);
 
                 char hexKey[65], wifKey[60];
                 format_256bit_hex(privkey, hexKey);
-                privkey_to_wif(privkey, wifKey, true);
+                bool isCompressed = (isOdd != 2);  // parity 0,1 = compressed, 2 = uncompressed
+                privkey_to_wif(privkey, wifKey, isCompressed);
 
-                fprintf(mf, "[%s] Pattern='%s' Address=%s\n", timestr, pattern, addr);
+                const char* addrType = isCompressed ? "compressed" : "uncompressed";
+                fprintf(mf, "[%s] Pattern='%s' Address=%s (%s)\n", timestr, pattern, addr, addrType);
                 fprintf(mf, "  PrivKey (HEX): 0x%s\n", hexKey);
                 fprintf(mf, "  PrivKey (WIF): %s\n", wifKey);
                 fprintf(mf, "  Hash160: ");
