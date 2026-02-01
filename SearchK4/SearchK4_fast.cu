@@ -595,9 +595,11 @@ __device__ void OutputMatchK4(uint32_t* out, uint32_t tid, int32_t incr, uint32_
     }
 }
 
+// Check compressed addresses (uses symmetry - both Y and -Y checked)
+// yNegated: true if py contains -Y (i.e., for negative offset keys)
 __device__ __noinline__ void CheckHashCompSymK4(
     uint64_t* px, uint64_t* py, uint32_t tid, int32_t incr,
-    uint32_t maxFound, uint32_t* out
+    uint32_t maxFound, uint32_t* out, bool yNegated = false
 ) {
     uint32_t h1[5], h2[5], h_uncomp[5];
     char addr[40];
@@ -615,7 +617,14 @@ __device__ __noinline__ void CheckHashCompSymK4(
     }
 
     // Check uncompressed address (uses both X and Y)
-    _GetHash160(px, py, (uint8_t*)h_uncomp);
+    // If Y was negated for symmetry optimization, we need to negate it back
+    uint64_t pyReal[4];
+    if (yNegated) {
+        ModNeg256(pyReal, py);  // Un-negate Y
+    } else {
+        Load256(pyReal, py);
+    }
+    _GetHash160(px, pyReal, (uint8_t*)h_uncomp);
 
     if (CheckVanityPatternsK4(h_uncomp, &matched_idx, addr)) {
         // Use parity=2 to indicate uncompressed
@@ -647,7 +656,7 @@ __device__ void ComputeKeysK4(
 
         _ModInvGrouped(dx);
 
-        CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2, maxFound, out);
+        CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2, maxFound, out, false);
 
         ModNeg256(pyn, py);
 
@@ -663,7 +672,7 @@ __device__ void ComputeKeysK4(
             _ModMult(py, _s);
             ModSub256(py, Gy[i]);
 
-            CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2 + (i+1), maxFound, out);
+            CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2 + (i+1), maxFound, out, false);
 
             Load256(px, sx);
             ModSub256(dy, pyn, Gy[i]);
@@ -676,7 +685,8 @@ __device__ void ComputeKeysK4(
             ModSub256(py, Gy[i]);
             ModNeg256(py, py);
 
-            CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2 - (i+1), maxFound, out);
+            // Y was negated - pass true so uncompressed check uses correct Y
+            CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2 - (i+1), maxFound, out, true);
         }
 
         Load256(px, sx);
@@ -691,7 +701,8 @@ __device__ void ComputeKeysK4(
         _ModMult(py, _s);
         ModSub256(py, Gy[i]);
         ModNeg256(py, py);
-        CheckHashCompSymK4(px, py, tid, j*GRP_SIZE, maxFound, out);
+        // Y was negated - pass true
+        CheckHashCompSymK4(px, py, tid, j*GRP_SIZE, maxFound, out, true);
 
         i++;
         Load256(px, sx);
