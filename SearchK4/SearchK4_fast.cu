@@ -643,10 +643,15 @@ __device__ uint64_t g_debugPx[4];
 __device__ uint32_t g_debugHash[5];
 
 __device__ void ComputeKeysK4(
+    uint64_t* dx_global, uint64_t* subp_global,
     uint32_t mode, uint64_t* startx, uint64_t* starty,
     uint32_t maxFound, uint32_t* out
 ) {
-    uint64_t dx[GRP_SIZE/2+1][4];
+    // Cast global memory to 2D array pointers for dx and subp
+    // These are allocated per-thread in global memory to avoid stack overflow
+    uint64_t (*dx)[4] = (uint64_t (*)[4])dx_global;
+    uint64_t (*subp)[4] = (uint64_t (*)[4])subp_global;
+
     uint64_t px[4], py[4], pyn[4], sx[4], sy[4], dy[4], _s[4], _p2[4];
 
     uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -675,7 +680,7 @@ __device__ void ComputeKeysK4(
         ModSub256(dx[i], Gx[i], sx);
         ModSub256(dx[i+1], _2Gnx, sx);
 
-        _ModInvGrouped(dx);
+        _ModInvGrouped(dx, subp);
 
         CheckHashCompSymK4(px, py, tid, j*GRP_SIZE + GRP_SIZE/2, maxFound, out, false);
 
@@ -782,12 +787,21 @@ __device__ void ComputeKeysK4(
 }
 
 __global__ void searchK4_kernel(
+    uint64_t* dx_buffer, uint64_t* subp_buffer,
     uint32_t mode, uint64_t* keys,
     uint32_t maxFound, uint32_t* found
 ) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int xPtr = (blockIdx.x * blockDim.x) * 8;
     int yPtr = xPtr + 4 * NB_THREAD_PER_GROUP;
-    ComputeKeysK4(mode, keys + xPtr, keys + yPtr, maxFound, found);
+
+    // Each thread gets its own slice of the global dx and subp buffers
+    // Array size per thread: (GRP_SIZE/2+1) * 4 uint64_t values
+    size_t arraySize = (GRP_SIZE / 2 + 1) * 4;
+    uint64_t* my_dx = dx_buffer + tid * arraySize;
+    uint64_t* my_subp = subp_buffer + tid * arraySize;
+
+    ComputeKeysK4(my_dx, my_subp, mode, keys + xPtr, keys + yPtr, maxFound, found);
 }
 
 // =====================================================================================
@@ -1459,10 +1473,12 @@ int main(int argc, char** argv) {
     }
     printf("Successfully copied %d patterns to GPU constant memory\n", numPatterns);
 
-    int nbThread = 64;  // Single block for debugging
+    int nbThread = 16384;  // Production: 256 blocks * 64 threads
     g_nbThread = nbThread;
     uint64_t* d_keys;
     uint32_t* d_found;
+    uint64_t* d_dx;     // Global memory for dx arrays (avoids stack overflow)
+    uint64_t* d_subp;   // Global memory for subp arrays (avoids stack overflow)
 
     err = cudaMalloc(&d_keys, nbThread * 64);
     if (err != cudaSuccess) {
@@ -1474,6 +1490,22 @@ int main(int argc, char** argv) {
         printf("CUDA ERROR allocating d_found: %s\n", cudaGetErrorString(err));
         return 1;
     }
+
+    // Allocate global memory for dx and subp arrays to avoid stack overflow
+    // Each thread needs (GRP_SIZE/2+1) * 4 uint64_t values = 513 * 4 * 8 = 16416 bytes
+    size_t dxSize = (size_t)nbThread * (GRP_SIZE / 2 + 1) * 4 * sizeof(uint64_t);
+    printf("Allocating dx buffer: %zu bytes (%.2f MB)\n", dxSize, dxSize / 1048576.0);
+    err = cudaMalloc(&d_dx, dxSize);
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR allocating d_dx: %s\n", cudaGetErrorString(err));
+        return 1;
+    }
+    err = cudaMalloc(&d_subp, dxSize);
+    if (err != cudaSuccess) {
+        printf("CUDA ERROR allocating d_subp: %s\n", cudaGetErrorString(err));
+        return 1;
+    }
+    printf("Allocated global memory for dx and subp arrays\n");
 
     uint64_t* h_keys = (uint64_t*)malloc(nbThread * 64);
     uint64_t resumedKeys = 0;
@@ -1519,6 +1551,8 @@ int main(int argc, char** argv) {
             free(h_keys);
             cudaFree(d_keys);
             cudaFree(d_found);
+            cudaFree(d_dx);
+            cudaFree(d_subp);
             return 1;
         }
     }
@@ -1545,7 +1579,7 @@ int main(int argc, char** argv) {
         cudaMemset(d_found, 0, 4);
         printf("Launching kernel...\n"); fflush(stdout);
         searchK4_kernel<<<nbThread/NB_THREAD_PER_GROUP, NB_THREAD_PER_GROUP>>>(
-            0, d_keys, MAX_FOUND, d_found);
+            d_dx, d_subp, 0, d_keys, MAX_FOUND, d_found);
         printf("Waiting for kernel...\n"); fflush(stdout);
         cudaDeviceSynchronize();
         printf("Kernel complete\n"); fflush(stdout);
@@ -1656,6 +1690,8 @@ int main(int argc, char** argv) {
 
     cudaFree(d_keys);
     cudaFree(d_found);
+    cudaFree(d_dx);
+    cudaFree(d_subp);
     cudaFreeHost(h_found);
     free(h_keys);
 

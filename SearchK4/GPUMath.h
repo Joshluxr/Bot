@@ -937,10 +937,11 @@ __device__ void _ModSqr(uint64_t *rp, const uint64_t *up) {
 // ---------------------------------------------------------------------------------------
 // Compute all ModInv of the group
 // ---------------------------------------------------------------------------------------
+// NOTE: subp is passed as a parameter to avoid stack overflow
+// The caller must allocate subp in global memory (GRP_SIZE/2+1 elements of 4 uint64_t each)
 
-__device__ __noinline__ void _ModInvGrouped(uint64_t r[GRP_SIZE / 2 + 1][4]) {
+__device__ __noinline__ void _ModInvGrouped(uint64_t (*r)[4], uint64_t (*subp)[4]) {
 
-  uint64_t subp[GRP_SIZE / 2 + 1][4];
   uint64_t newValue[4];
   uint64_t inverse[5];
 
