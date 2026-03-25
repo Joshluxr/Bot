@@ -1,0 +1,516 @@
+diff --git a/apps/broadcast/src/sandbox.ts b/apps/broadcast/src/sandbox.ts
+index ecdaa82..f033855 100644
+--- a/apps/broadcast/src/sandbox.ts
++++ b/apps/broadcast/src/sandbox.ts
+@@ -91,6 +91,7 @@ async function resumeSandboxSession({
+     }
+     case "docker":
+     case "mock":
++    case "opensandbox":
+       throw new Error("Unsupported sandbox provider");
+     default:
+       const _exhaustiveCheck: never = sandboxProvider;
+diff --git a/apps/www/src/agent/sandbox.ts b/apps/www/src/agent/sandbox.ts
+index 728ccbf..aa3a47c 100644
+--- a/apps/www/src/agent/sandbox.ts
++++ b/apps/www/src/agent/sandbox.ts
+@@ -1044,6 +1044,8 @@ export async function getSandboxProvider({
+       return "daytona";
+     case "docker":
+       return "docker";
++    case "opensandbox":
++      return "opensandbox";
+     case "mock":
+       return "mock";
+     default:
+diff --git a/apps/www/src/app/(sidebar)/(site-header)/internal/admin/sandbox/[...providerAndId]/page.tsx b/apps/www/src/app/(sidebar)/(site-header)/internal/admin/sandbox/[...providerAndId]/page.tsx
+index 2ff057c..00c3068 100644
+--- a/apps/www/src/app/(sidebar)/(site-header)/internal/admin/sandbox/[...providerAndId]/page.tsx
++++ b/apps/www/src/app/(sidebar)/(site-header)/internal/admin/sandbox/[...providerAndId]/page.tsx
+@@ -39,6 +39,13 @@ export default async function AdminSandboxIdPage({
+             sandboxId={providerAndId[1]!}
+           />
+         );
++      case "opensandbox":
++        return (
++          <AdminSandboxContent
++            sandboxProvider="opensandbox"
++            sandboxId={providerAndId[1]!}
++          />
++        );
+       default:
+         throw new Error(`Invalid provider ${providerAndId[0]}`);
+     }
+diff --git a/apps/www/src/components/settings/sandbox-provider-selector.tsx b/apps/www/src/components/settings/sandbox-provider-selector.tsx
+index e56922d..722aef6 100644
+--- a/apps/www/src/components/settings/sandbox-provider-selector.tsx
++++ b/apps/www/src/components/settings/sandbox-provider-selector.tsx
+@@ -28,6 +28,7 @@ export function SandboxProviderSelector() {
+         <SelectItem value="default">Default</SelectItem>
+         <SelectItem value="e2b">E2B</SelectItem>
+         <SelectItem value="daytona">Daytona</SelectItem>
++        <SelectItem value="opensandbox">OpenSandbox</SelectItem>
+       </SelectContent>
+     </Select>
+   );
+diff --git a/apps/www/src/lib/sandbox-terminal.ts b/apps/www/src/lib/sandbox-terminal.ts
+index 4b43eef..7ba4fce 100644
+--- a/apps/www/src/lib/sandbox-terminal.ts
++++ b/apps/www/src/lib/sandbox-terminal.ts
+@@ -10,6 +10,7 @@ export function isSandboxTerminalSupported(sandboxProvider: SandboxProvider) {
+       return false;
+     case "docker":
+     case "mock":
++    case "opensandbox":
+       return false;
+     default:
+       const _exhaustiveCheck: never = sandboxProvider;
+diff --git a/packages/env/src/apps-www.ts b/packages/env/src/apps-www.ts
+index c00c3c8..efa234f 100644
+--- a/packages/env/src/apps-www.ts
++++ b/packages/env/src/apps-www.ts
+@@ -97,6 +97,12 @@ export const env = envsafe(
+     // Sandbox providers
+     E2B_API_KEY: str({ allowEmpty: true, default: "" }),
+     DAYTONA_API_KEY: str({ default: "", allowEmpty: true }),
++    OPEN_SANDBOX_DOMAIN: str({ allowEmpty: true, default: "" }),
++    OPEN_SANDBOX_API_KEY: str({ allowEmpty: true, default: "" }),
++    OPEN_SANDBOX_PROTOCOL: str({ allowEmpty: true, default: "http" }),
++    OPEN_SANDBOX_IMAGE: str({ allowEmpty: true, default: "" }),
++    OPEN_SANDBOX_TIMEOUT_SECONDS: num({ default: 0 }),
++    OPEN_SANDBOX_USE_SERVER_PROXY: bool({ default: false }),
+ 
+     // GitHub App
+     GITHUB_CLIENT_ID: str(),
+diff --git a/packages/sandbox/package.json b/packages/sandbox/package.json
+index d1ca1d3..18df187 100644
+--- a/packages/sandbox/package.json
++++ b/packages/sandbox/package.json
+@@ -26,6 +26,7 @@
+   },
+   "packageManager": "pnpm@10.14.0",
+   "dependencies": {
++    "@alibaba-group/opensandbox": "0.1.4",
+     "@daytonaio/sdk": "0.115.2",
+     "@e2b/code-interpreter": "^1.2.0-beta.4",
+     "@iarna/toml": "^3.0.0",
+diff --git a/packages/sandbox/src/provider.ts b/packages/sandbox/src/provider.ts
+index 7d5b354..4797852 100644
+--- a/packages/sandbox/src/provider.ts
++++ b/packages/sandbox/src/provider.ts
+@@ -4,6 +4,7 @@ import { DockerProvider } from "./providers/docker-provider";
+ import { E2BProvider } from "./providers/e2b-provider";
+ import { MockProvider } from "./providers/mock-provider";
+ import { DaytonaProvider } from "./providers/daytona-provider";
++import { OpenSandboxProvider } from "./providers/opensandbox-provider";
+ 
+ export function getSandboxProvider(
+   provider: SandboxProvider,
+@@ -30,6 +31,8 @@ export function getSandboxProvider(
+       );
+     case "daytona":
+       return new DaytonaProvider();
++    case "opensandbox":
++      return new OpenSandboxProvider();
+     default:
+       const _exhaustiveCheck: never = provider;
+       throw new Error(`Unknown sandbox provider: ${_exhaustiveCheck}`);
+diff --git a/packages/sandbox/src/providers/opensandbox-provider.ts b/packages/sandbox/src/providers/opensandbox-provider.ts
+new file mode 100644
+index 0000000..30bd4be
+--- /dev/null
++++ b/packages/sandbox/src/providers/opensandbox-provider.ts
+@@ -0,0 +1,341 @@
++import {
++  BackgroundCommandOptions,
++  CreateSandboxOptions,
++  ISandboxProvider,
++  ISandboxSession,
++} from "../types";
++import {
++  ConnectionConfig,
++  Sandbox as OpenSandbox,
++  type Sandbox as OpenSandboxInstance,
++} from "@alibaba-group/opensandbox";
++import path from "path";
++import { retryAsync } from "@terragon/utils/retry";
++
++const HOME_DIR = "root";
++const REPO_DIR = "repo";
++const DEFAULT_DIR = `/${HOME_DIR}`;
++
++const OPEN_SANDBOX_DOMAIN =
++  process.env.OPEN_SANDBOX_DOMAIN || "localhost:8080";
++const OPEN_SANDBOX_API_KEY = process.env.OPEN_SANDBOX_API_KEY || "";
++const OPEN_SANDBOX_PROTOCOL =
++  (process.env.OPEN_SANDBOX_PROTOCOL as "http" | "https") || "http";
++const OPEN_SANDBOX_IMAGE =
++  process.env.OPEN_SANDBOX_IMAGE ||
++  "opensandbox/code-interpreter:v1.0.2";
++const OPEN_SANDBOX_USE_SERVER_PROXY =
++  process.env.OPEN_SANDBOX_USE_SERVER_PROXY === "1" ||
++  process.env.OPEN_SANDBOX_USE_SERVER_PROXY === "true";
++
++const SANDBOX_TIMEOUT_SECONDS =
++  parseInt(process.env.OPEN_SANDBOX_TIMEOUT_SECONDS || "", 10) || 60 * 45;
++
++function buildConnectionConfig(): ConnectionConfig {
++  return new ConnectionConfig({
++    domain: OPEN_SANDBOX_DOMAIN,
++    protocol: OPEN_SANDBOX_PROTOCOL,
++    apiKey: OPEN_SANDBOX_API_KEY || undefined,
++    useServerProxy: OPEN_SANDBOX_USE_SERVER_PROXY,
++    requestTimeoutSeconds: Math.min(600, SANDBOX_TIMEOUT_SECONDS + 120),
++  });
++}
++
++function envArrayToRecord(
++  vars: Array<{ key: string; value: string }>,
++): Record<string, string> {
++  const out: Record<string, string> = {};
++  for (const { key, value } of vars) {
++    out[key] = value;
++  }
++  return out;
++}
++
++function resolvePath(filePath: string, cwdRel: string): string {
++  if (filePath.startsWith("/")) {
++    return filePath;
++  }
++  const base = cwdRel.startsWith("/")
++    ? cwdRel
++    : path.posix.join(DEFAULT_DIR, cwdRel);
++  return path.posix.join(base, filePath);
++}
++
++function executionToStdout(execution: {
++  logs: { stdout: { text: string }[]; stderr: { text: string }[] };
++  error?: { name: string; value: string; traceback: string[] };
++}): string {
++  return execution.logs.stdout.map((m) => m.text).join("");
++}
++
++function executionToStderr(execution: {
++  logs: { stderr: { text: string }[] };
++}): string {
++  return execution.logs.stderr.map((m) => m.text).join("");
++}
++
++class OpenSandboxSession implements ISandboxSession {
++  public readonly sandboxProvider = "opensandbox" as const;
++
++  constructor(
++    private sbx: OpenSandboxInstance,
++    public readonly sandboxId: string,
++  ) {}
++
++  get homeDir(): string {
++    return HOME_DIR;
++  }
++
++  get repoDir(): string {
++    return REPO_DIR;
++  }
++
++  async hibernate(): Promise<void> {
++    await this.sbx.pause();
++  }
++
++  async runCommand(
++    command: string,
++    options?: {
++      env?: Record<string, string>;
++      cwd?: string;
++      timeoutMs?: number;
++      onStdout?: (data: string) => void;
++      onStderr?: (data: string) => void;
++    },
++  ): Promise<string> {
++    const workDir = options?.cwd || REPO_DIR;
++    const workingDirectory = workDir.startsWith("/")
++      ? workDir
++      : path.posix.join(DEFAULT_DIR, workDir);
++    const timeoutSeconds =
++      options?.timeoutMs && options.timeoutMs > 0
++        ? Math.max(1, Math.ceil(options.timeoutMs / 1000))
++        : undefined;
++
++    const execution = await this.sbx.commands.run(
++      command,
++      {
++        workingDirectory,
++        timeoutSeconds,
++      },
++      {
++        onStdout: options?.onStdout
++          ? (m) => options.onStdout!(m.text)
++          : undefined,
++        onStderr: options?.onStderr
++          ? (m) => options.onStderr!(m.text)
++          : undefined,
++      },
++    );
++
++    const stdout = executionToStdout(execution);
++    const stderr = executionToStderr(execution);
++
++    let exitCode: number | null = null;
++    if (execution.id) {
++      try {
++        const status = await this.sbx.commands.getCommandStatus(execution.id);
++        exitCode = status.exitCode ?? null;
++      } catch {
++        /* best-effort */
++      }
++    }
++
++    if (execution.error) {
++      const trace = execution.error.traceback?.join("\n") ?? "";
++      throw new Error(
++        `Command failed\n\nstdout:\n${stdout || "(empty)"}\nstderr:\n${stderr || "(empty)"}\nerror:\n${execution.error.name}: ${execution.error.value}\n${trace}`,
++      );
++    }
++
++    if (exitCode !== null && exitCode !== 0) {
++      throw new Error(
++        `Command failed with exit code ${exitCode}\n\nstdout:\n${stdout || "(empty)"}\nstderr:\n${stderr || "(empty)"}`,
++      );
++    }
++
++    return stdout;
++  }
++
++  async runBackgroundCommand(
++    command: string,
++    options?: BackgroundCommandOptions,
++  ): Promise<void> {
++    const workDirPath = path.posix.join(DEFAULT_DIR, REPO_DIR);
++    const timeoutSeconds =
++      options?.timeoutMs && options.timeoutMs > 0
++        ? Math.max(1, Math.ceil(options.timeoutMs / 1000))
++        : undefined;
++
++    await this.sbx.commands.run(
++      command,
++      {
++        workingDirectory: workDirPath,
++        background: true,
++        timeoutSeconds,
++      },
++      {
++        onStdout: options?.onOutput
++          ? (m) => options.onOutput!(m.text)
++          : undefined,
++        onStderr: options?.onOutput
++          ? (m) => options.onOutput!(m.text)
++          : undefined,
++      },
++    );
++  }
++
++  async shutdown(): Promise<void> {
++    try {
++      await this.sbx.kill();
++    } finally {
++      await this.sbx.close().catch(() => {});
++    }
++  }
++
++  async readTextFile(filePath: string): Promise<string> {
++    const full = resolvePath(filePath, REPO_DIR);
++    return await this.sbx.files.readFile(full);
++  }
++
++  async writeTextFile(filePath: string, content: string): Promise<void> {
++    const full = resolvePath(filePath, REPO_DIR);
++    const dir = path.posix.dirname(full);
++    if (dir !== "/" && dir !== ".") {
++      await this.sbx.files.createDirectories([{ path: dir, mode: 0o755 }]);
++    }
++    await this.sbx.files.writeFiles([
++      { path: full, data: content, mode: 0o644 },
++    ]);
++  }
++
++  async writeFile(filePath: string, content: Uint8Array): Promise<void> {
++    const full = resolvePath(filePath, REPO_DIR);
++    const dir = path.posix.dirname(full);
++    if (dir !== "/" && dir !== ".") {
++      await this.sbx.files.createDirectories([{ path: dir, mode: 0o755 }]);
++    }
++    await this.sbx.files.writeFiles([
++      { path: full, data: content, mode: 0o644 },
++    ]);
++  }
++}
++
++async function connectWithRetry(
++  sandboxId: string,
++  config: ConnectionConfig,
++): Promise<OpenSandboxInstance> {
++  return await retryAsync(
++    async () =>
++      OpenSandbox.connect({
++        sandboxId,
++        connectionConfig: config,
++      }),
++    {
++      label: `opensandbox connect ${sandboxId}`,
++      maxAttempts: 4,
++      delayMs: 1500,
++    },
++  );
++}
++
++export class OpenSandboxProvider implements ISandboxProvider {
++  async getSandboxOrNull(sandboxId: string): Promise<ISandboxSession | null> {
++    const config = buildConnectionConfig().withTransportIfMissing();
++    try {
++      const sbx = await connectWithRetry(sandboxId, config);
++      const info = await sbx.getInfo();
++      if (info.status.state === "Paused") {
++        const resumed = await sbx.resume();
++        await sbx.close().catch(() => {});
++        return new OpenSandboxSession(resumed, sandboxId);
++      }
++      return new OpenSandboxSession(sbx, sandboxId);
++    } catch (e) {
++      console.warn(`[opensandbox] Failed to resume ${sandboxId}:`, e);
++      await config.closeTransport().catch(() => {});
++      return null;
++    }
++  }
++
++  async getOrCreateSandbox(
++    sandboxId: string | null,
++    options: CreateSandboxOptions,
++  ): Promise<ISandboxSession> {
++    const baseConfig = buildConnectionConfig().withTransportIfMissing();
++
++    if (sandboxId) {
++      const session = await this.getSandboxOrNull(sandboxId);
++      if (session) {
++        return session;
++      }
++      throw new Error(`OpenSandbox ${sandboxId} not found`);
++    }
++
++    const env = envArrayToRecord(options.environmentVariables ?? []);
++
++    let sbx: OpenSandboxInstance | null = null;
++    try {
++      sbx = await retryAsync(
++        async () =>
++          OpenSandbox.create({
++            connectionConfig: baseConfig,
++            image: OPEN_SANDBOX_IMAGE,
++            env,
++            timeoutSeconds: SANDBOX_TIMEOUT_SECONDS,
++            readyTimeoutSeconds: 120,
++          }),
++        {
++          label: "opensandbox create",
++          maxAttempts: 3,
++          delayMs: 2000,
++        },
++      );
++      return new OpenSandboxSession(sbx, sbx.id);
++    } catch (err) {
++      if (sbx) {
++        try {
++          await sbx.kill();
++        } catch {
++          /* ignore */
++        }
++        await sbx.close().catch(() => {});
++      } else {
++        await baseConfig.closeTransport().catch(() => {});
++      }
++      throw err;
++    }
++  }
++
++  async hibernateById(sandboxId: string): Promise<void> {
++    const config = buildConnectionConfig().withTransportIfMissing();
++    try {
++      const sbx = await connectWithRetry(sandboxId, config);
++      try {
++        await sbx.pause();
++      } finally {
++        await sbx.close();
++      }
++    } catch (e) {
++      console.error(`[opensandbox] hibernate failed for ${sandboxId}:`, e);
++      await config.closeTransport().catch(() => {});
++      throw e;
++    }
++  }
++
++  async extendLife(sandboxId: string): Promise<void> {
++    const config = buildConnectionConfig().withTransportIfMissing();
++    try {
++      const sbx = await connectWithRetry(sandboxId, config);
++      try {
++        await sbx.renew(SANDBOX_TIMEOUT_SECONDS);
++      } finally {
++        await sbx.close();
++      }
++    } catch (e) {
++      console.warn(`[opensandbox] renew failed for ${sandboxId}:`, e);
++      await config.closeTransport().catch(() => {});
++    }
++  }
++}
+diff --git a/packages/sandbox/src/sandbox.test.ts b/packages/sandbox/src/sandbox.test.ts
+index 826f2c8..07ef47c 100644
+--- a/packages/sandbox/src/sandbox.test.ts
++++ b/packages/sandbox/src/sandbox.test.ts
+@@ -39,6 +39,8 @@ if (process.env.SANDBOX_PROVIDER) {
+     providerName = "e2b";
+   } else if (process.env.SANDBOX_PROVIDER === "daytona") {
+     providerName = "daytona";
++  } else if (process.env.SANDBOX_PROVIDER === "opensandbox") {
++    providerName = "opensandbox";
+   } else {
+     throw new Error(
+       `Invalid sandbox provider: ${process.env.SANDBOX_PROVIDER}`,
+diff --git a/packages/types/src/broadcast.ts b/packages/types/src/broadcast.ts
+index 77645e5..7a194c5 100644
+--- a/packages/types/src/broadcast.ts
++++ b/packages/types/src/broadcast.ts
+@@ -123,7 +123,7 @@ const BroadcastThreadShellRealtimeFieldsSchema = z.object({
+   bootingSubstatus: BroadcastBootingSubstatusSchema.nullable().optional(),
+   codesandboxId: z.string().nullable().optional(),
+   sandboxProvider: z
+-    .enum(["e2b", "docker", "mock", "daytona"])
++    .enum(["e2b", "docker", "mock", "daytona", "opensandbox"])
+     .nullable()
+     .optional(),
+   sandboxSize: z.enum(["small", "large"]).nullable().optional(),
+@@ -333,7 +333,8 @@ export function parseBroadcastChannel(
+         (parsedRecord.sandboxProvider === "e2b" ||
+           parsedRecord.sandboxProvider === "docker" ||
+           parsedRecord.sandboxProvider === "mock" ||
+-          parsedRecord.sandboxProvider === "daytona")
++          parsedRecord.sandboxProvider === "daytona" ||
++          parsedRecord.sandboxProvider === "opensandbox")
+           ? parsedRecord.sandboxProvider
+           : undefined;
+       if (!userId || !threadId || !sandboxId) {
+diff --git a/packages/types/src/sandbox.ts b/packages/types/src/sandbox.ts
+index ac2b780..ccc02cf 100644
+--- a/packages/types/src/sandbox.ts
++++ b/packages/types/src/sandbox.ts
+@@ -1,5 +1,10 @@
+ // NOTE: This is stored in the database, so don't remove any values from this list.
+-export type SandboxProvider = "e2b" | "docker" | "mock" | "daytona";
++export type SandboxProvider =
++  | "e2b"
++  | "docker"
++  | "mock"
++  | "daytona"
++  | "opensandbox";
+ 
+ // Generic sandbox size - applies to all providers
+ // NOTE: This is stored in the database, so don't remove any values from this list.
