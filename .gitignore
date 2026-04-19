@@ -1,0 +1,7 @@
+# Local secrets — do not commit
+.env
+.env.*
+!.env.example
+dragon_env_answers/.env*
+*.pem
+secrets/
