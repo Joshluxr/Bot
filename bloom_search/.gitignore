@@ -1,0 +1,18 @@
+# Large files
+btc_addresses.txt.gz
+btc_addresses.bloom
+btc_hash160.bin
+
+# Temp files
+*.pyc
+__pycache__/
+vanity_temp.txt
+vanity_output.txt
+
+# Logs
+*.log
+search.pid
+
+# Output
+found_matches.txt
+checkpoint.json
