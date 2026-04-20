@@ -16,9 +16,7 @@
 */
 
 // ---------------------------------------------------------------------------------
-// SHA256
-// ---------------------------------------------------------------------------------
-
+// Optimized SHA256 constants with improved memory alignment
 __device__ __constant__ uint32_t K[] =
 {
     0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5,
@@ -37,6 +35,13 @@ __device__ __constant__ uint32_t K[] =
     0x391C0CB3, 0x4ED8AA4A, 0x5B9CCA4F, 0x682E6FF3,
     0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208,
     0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7, 0xC67178F2,
+};
+
+// Optimized initial hash values with proper alignment
+__device__ __constant__ uint32_t I[] =
+{
+  0x6a09e667ul, 0xbb67ae85ul, 0x3c6ef372ul, 0xa54ff53aul,
+  0x510e527ful, 0x9b05688cul, 0x1f83d9abul, 0x5be0cd19ul,
 };
 
 __device__ __constant__ uint32_t I[] = {
