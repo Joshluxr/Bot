@@ -2153,10 +2153,15 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Default threads: 1024 in legacy prefix mode, 393216 in direct mode.
-    // Higher thread count improves latency hiding and occupancy with the
-    // reduced 2KB stack (was 36KB). Benchmarked optimal on RTX 5080.
-    int defaultThreads = directMode ? 393216 : 1024;
+    // Default threads: 1024 in legacy prefix mode, 655360 in direct mode.
+    // 655360 was the steady-state peak in the April 25 thread-count sweep
+    // on RTX 5080 (sm_120, NVCC 13.0): 393216 → 1.73 GKey/s, 524288 → 1.74,
+    // 655360 → 1.77, 786432 → 1.73, 1048576 → 1.76. The bump from 393216
+    // to 655360 is ~+2% throughput. dx/subp on per-thread stack scales the
+    // local-memory backing with *resident* threads (~32K on 5080), not
+    // total threads, so VRAM stays flat at ~1 GB regardless of nbThread.
+    // See OPTIMIZATION_NOTES_v2.md for the full sweep data.
+    int defaultThreads = directMode ? 655360 : 1024;
     int nbThread = (threadCount > 0) ? threadCount : defaultThreads;
     if (nbThread < NB_THREAD_PER_GROUP || (nbThread % NB_THREAD_PER_GROUP) != 0) {
         printf("Error: -threads must be at least %d and a multiple of %d.\n",

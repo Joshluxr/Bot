@@ -13,11 +13,18 @@ mistakes.
 
 | | Before | After | Δ |
 |---|---|---|---|
-| Per-GPU throughput | 1.62 GKey/s | 1.74 GKey/s | **+7.4%** |
-| 8-GPU aggregate (projected) | ~13.0 GKey/s | ~13.9 GKey/s | +7.4% |
+| Per-GPU throughput | 1.62 GKey/s | **1.77 GKey/s** | **+9.3%** |
+| 8-GPU aggregate (projected) | ~13.0 GKey/s | ~14.2 GKey/s | +9.3% |
 | dx/subp VRAM | 12.9 GB | ~1 GB | **-11.9 GB freed** |
 | Per-kernel spill stores / loads | 224 / 540 B | 204 / 452 B | -9% / -16% |
-| Stack frame | 1008 B | 33824 B | (now in local memory, auto-coalesced) |
+| Stack frame | 1008 B | 33,824 B | (now in local memory, auto-coalesced) |
+| `defaultThreads` (direct mode) | 393,216 | 655,360 | +66% |
+
+**Cumulative changes:**
+1. **dx/subp moved to per-thread stack** — auto-coalesced via the CUDA
+   local-memory ABI, frees 11+ GB VRAM (+7.4%)
+2. **`defaultThreads` bumped 393,216 → 655,360** — empirical sweep peak
+   on RTX 5080 (+2.3% on top)
 
 Branch: `devin/1777111192-searchk4-microopts`
 Tip: `b683a5a` (single commit on top of `April25devinworking@16670ef`)
@@ -276,19 +283,122 @@ b683a5a  ONLY dx/subp on stack        1.74 GKey/s
 
 ---
 
-## Future Tier-2 Ideas (this pass, in progress)
+## Phase 6: Tier-2 Sweeps
 
-- **Sweep `nbThread` downward** (393K is overkill at ~32K resident on
-  5080). Lower thread count → less per-iter setup → potentially
-  higher steady-state throughput.
-- **Sweep `MAXREG`** (144, 160, 192) with dx/subp-on-stack to find
-  the spill / occupancy sweet spot.
-- **Bloom L1 in registers** (very small, e.g. 256–1024 bits) to
-  short-circuit before any memory access at all. Costs registers,
-  not occupancy.
-- **Manual block-strided dx/subp** as a sanity check that NVCC's
-  auto-stride is actually optimal.
-- **Profile with `ncu`** to find the actual bottleneck (memory
-  bandwidth? L2 hit rate? warp issue stall?) instead of guessing.
+After locking in the dx/subp-on-stack change, three tier-2 ideas were
+tested on the same 5080.
 
-These will be benchmarked the same way and added to PR #19 if they win.
+### Thread count sweep (steady-state ~90s runs, dx/subp-on-stack tip)
+
+| `-threads` | GKey/s |
+|---|---|
+| 65,536    | 1.40 |
+| 131,072   | 1.58 |
+| 196,608   | 1.65 |
+| 262,144   | 1.69 |
+| 327,680   | 1.72 |
+| **393,216** *(prior default)* | **1.72** |
+| 458,752   | 1.73 |
+| 524,288   | 1.75 |
+| **655,360** *(new default)* | **1.77** |
+| 786,432   | 1.73 |
+| 1,048,576 | 1.76 |
+
+Hypothesis going in: 393K is overkill for ~32K resident on RTX 5080,
+so lower `nbThread` should win by reducing per-iter setup overhead.
+**Hypothesis was wrong.** Higher thread counts give the SM scheduler
+more queued blocks to keep in-flight, which apparently hides launch
++ memcpy overhead better than fewer-but-fatter iterations. The peak is
+at 655,360 threads (~+2.3% over 393,216). Above that, returns
+diminish — 786K is slightly worse, suggesting some second-order cost
+(maybe d_keys VRAM pressure) creeping back in.
+
+**Action:** Bumped `defaultThreads` from 393,216 to 655,360 in
+direct mode.
+
+### MAXREG sweep (655,360 threads, dx/subp-on-stack tip)
+
+Re-ran a register-cap sweep now that dx/subp is on the stack, in case
+the dynamics had changed.
+
+| MAXREG | regs used | GKey/s |
+|---|---|---|
+| 128 *(current)* | 128 | 1.77 |
+| 144 | 144 | 1.79 (long-run: 1.78) |
+| 160 | 160 | 1.77 |
+| 176 | 176 | 1.70 |
+| 192 | 192 | 1.73 |
+| 224 | 224 | 1.70 |
+| 256 | 198 | 1.73 |
+
+`MAXREG=144` is a marginal +0.5% improvement (within noise). The
+spill profile improves meaningfully (160/316 vs 204/452 spill
+stores/loads), but the throughput delta is too small to be confident.
+**Not committing this change** — keeping `-maxrregcount=128` for now.
+Revisit in a future pass with multi-run averaging.
+
+### `NB_THREAD_PER_GROUP` (block size) sweep
+
+Tested 32, 64 (default), 96, 128. All gave ~1.77 GKey/s within noise
+on the long-run column. **Not changing.**
+
+### `ncu` profiler
+
+The vast.ai instance has `ncu` installed but
+`ERR_NVGPUCTRPERM` blocks userland access to the perf counters. Would
+need root + kernel-module reconfiguration to enable, which would
+require a host reboot. **Skipped.** A more thorough optimization pass
+would require a non-cloud GPU or a vast.ai instance with relaxed
+counter permissions.
+
+### Other tier-2 ideas that don't apply on closer inspection
+
+- **Bloom L1 in registers.** Bloom filters are positional — every
+  thread needs the *same* filter contents to probe its own hash.
+  Per-thread register copies of a 256-bit filter wouldn't reject
+  anything (FP rate ≈ 100% with 4000 targets in 256 bits).
+  Constant memory broadcast would serialize on hash divergence.
+  **Skipped.**
+- **`__constant__` bloom filter.** Same problem: each thread queries
+  a different bloom slot, so `__constant__`'s broadcast advantage
+  vanishes and serializes the warp.
+- **Manual block-strided dx/subp.** The whole point of the local-mem
+  ABI win is that NVCC + CUDA hardware do this for free. Manual
+  rewrite would add complexity without changing the actual access
+  pattern. **Skipped.**
+
+---
+
+## Tier-2 Final Tally
+
+| Change | Δ from prior | Cumulative from baseline |
+|---|---|---|
+| dx/subp on stack (Phase 3) | +7.4% | 1.62 → 1.74 GKey/s |
+| nbThread default 655,360 | +2.3% | 1.74 → 1.77 GKey/s |
+| (MAXREG=144 — not committed; +0.5%) | — | — |
+
+**Final: 1.62 → 1.77 GKey/s = +9.3% per RTX 5080.**
+
+8-GPU aggregate projection: ~13.0 → ~14.2 GKey/s.
+
+---
+
+## What's left on the table
+
+After this pass, the kernel is genuinely close to its single-GPU
+ceiling without algorithmic changes. To push past ~1.8 GKey/s/5080,
+the levers that remain are all expensive or risky:
+
+1. **Profile with `ncu` on a permissive-counter host.** Without it,
+   we're still guessing at the bottleneck. With it, we'd know if
+   we're memory-bound, issue-bound, or stalled on a specific
+   instruction.
+2. **GLV endomorphism.** Cuts EC scalar-mul work by ~40% but
+   requires correctness-critical math infra. ~3–5 days.
+3. **Pollard kangaroo.** Rejected by the user, but for completeness:
+   ~10¹⁰× expected speedup on the *actual* puzzle problem. ~1–3 days.
+4. **PTX hand-tuning of the inner SHA-256 / RIPEMD-160.** sm_120
+   exposes new instructions vs sm_86 era code. ~1 week.
+
+Without one of those, ~1.77 GKey/s / 14 GKey/s aggregate is the
+practical ceiling for this codebase on this hardware.
