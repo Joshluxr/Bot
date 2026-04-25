@@ -21,7 +21,7 @@ LDFLAGS = -lcuda
 
 HEADERS = GPUGroup.h GPUMath.h GPUHash.h CPUGroup.h ripemd160.h
 
-.PHONY: all clean fast legacy test smoke help
+.PHONY: all clean fast legacy test smoke help print-config
 
 all: searchk4_fast
 
@@ -31,7 +31,14 @@ help:
 	@echo "  make searchk4        Build the legacy/reference implementation"
 	@echo "  make smoke           End-to-end test: Puzzle #1 direct-mode match"
 	@echo "  make test            Short prefix-mode smoke test"
+	@echo "  make print-config    Show build configuration"
 	@echo "  make clean           Remove built binaries and state files"
+
+print-config:
+	@echo "CUDA_PATH=$(CUDA_PATH)"
+	@echo "NVCC=$(NVCC)"
+	@echo "CCAP=$(CCAP)"
+	@echo "NVCC_FLAGS=$(NVCC_FLAGS)"
 
 # ripemd160.c is pure C99. nvcc compiles it via its embedded host toolchain
 # with -x c. If that ever fails, fall back to: gcc -O3 -c ripemd160.c
@@ -61,7 +68,7 @@ smoke: searchk4_fast
 	@rm -f _smoke_patterns.txt *.state
 	@echo
 	@echo "--- matches (expect verified=yes, NO 'UNVERIFIED' lines) ---"
-	@grep -E "Pattern=|PrivKey|verified=|UNVERIFIED" _smoke_found.txt 2>/dev/null || true
+	@grep -E "Pattern=|PrivKey|verified=|VerifiedAddress|UNVERIFIED" _smoke_found.txt 2>/dev/null || true
 	@rm -f _smoke_found.txt
 
 # Short prefix-mode smoke test, kept from the ChatGPT baseline.

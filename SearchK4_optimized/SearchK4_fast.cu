@@ -19,6 +19,22 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <ctype.h>
+#include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+
+// Checked CUDA call wrapper. Prints file/line on failure and returns from main.
+#define CUDA_CHECK(call) do { \
+    cudaError_t _err = (call); \
+    if (_err != cudaSuccess) { \
+        printf("CUDA ERROR %s:%d: %s: %s\n", \
+               __FILE__, __LINE__, #call, cudaGetErrorString(_err)); \
+        return 1; \
+    } \
+} while (0)
+
+static void cuda_free_if_set(void* ptr) { if (ptr) cudaFree(ptr); }
+static void cuda_free_host_if_set(void* ptr) { if (ptr) cudaFreeHost(ptr); }
 
 
 #include "GPUGroup.h"
@@ -89,8 +105,9 @@ __device__ __constant__ uint64_t d_seqDeltaX[4];
 __device__ __constant__ uint64_t d_seqDeltaY[4];
 __device__ __constant__ int d_useSeqDelta;  // 0 = use _2Gn, 1 = use sequential delta
 
+volatile sig_atomic_t g_stop_requested = 0;
 volatile bool running = true;
-void sighandler(int s) { running = false; printf("\nStopping...\n"); }
+void sighandler(int s) { g_stop_requested = 1; }
 
 // =====================================================================================
 // SECP256K1 CPU-SIDE ELLIPTIC CURVE MATH (for key initialization)
@@ -1221,13 +1238,7 @@ static bool peek_state_seq_header(const char* f, K4StateHeaderV2* header) {
            header->version == K4_STATE_VERSION;
 }
 
-void save_state_seq(const char* f, uint64_t* k, int n, uint64_t t, uint64_t iter, const uint64_t* baseKey) {
-    FILE* fp = fopen(f, "wb");
-    if (!fp) {
-        printf("Warning: Could not write state file: %s\n", f);
-        return;
-    }
-
+bool save_state_seq(const char* f, uint64_t* k, int n, uint64_t t, uint64_t iter, const uint64_t* baseKey) {
     K4StateHeaderV2 header;
     memset(&header, 0, sizeof(header));
     memcpy(header.magic, K4_STATE_MAGIC, sizeof(header.magic));
@@ -1241,9 +1252,35 @@ void save_state_seq(const char* f, uint64_t* k, int n, uint64_t t, uint64_t iter
     header.keyWords = (uint64_t)n * 8ULL;
     header.checksum = compute_state_checksum(&header, k);
 
-    fwrite(&header, sizeof(header), 1, fp);
-    fwrite(k, sizeof(uint64_t), (size_t)header.keyWords, fp);
-    fclose(fp);
+    char tmpPath[PATH_MAX];
+    snprintf(tmpPath, sizeof(tmpPath), "%s.tmp.%ld", f, (long)getpid());
+
+    FILE* fp = fopen(tmpPath, "wb");
+    if (!fp) {
+        printf("Warning: Could not create temp state file: %s (%s)\n", tmpPath, strerror(errno));
+        return false;
+    }
+
+    bool ok = fwrite(&header, sizeof(header), 1, fp) == 1 &&
+              fwrite(k, sizeof(uint64_t), (size_t)header.keyWords, fp) == header.keyWords;
+
+    if (ok) ok = (fflush(fp) == 0);
+    if (ok) ok = (fsync(fileno(fp)) == 0);
+
+    if (fclose(fp) != 0) ok = false;
+
+    if (!ok) {
+        printf("Warning: State write failed for %s (%s)\n", f, strerror(errno));
+        remove(tmpPath);
+        return false;
+    }
+
+    if (rename(tmpPath, f) != 0) {
+        printf("Warning: State rename failed: %s -> %s (%s)\n", tmpPath, f, strerror(errno));
+        remove(tmpPath);
+        return false;
+    }
+    return true;
 }
 
 static bool load_state_seq(const char* f, uint64_t* k, int n, K4LoadedState* loaded) {
@@ -2134,14 +2171,14 @@ int main(int argc, char** argv) {
 
     signal(SIGINT, sighandler);
     signal(SIGTERM, sighandler);
-    cudaSetDevice(gpuId);
+    CUDA_CHECK(cudaSetDevice(gpuId));
 
     // Stack size: kernel uses ~1104 bytes (measured by nvcc). 2KB gives headroom.
     // Previous 36KB was set for combined compressed+uncompressed paths (now removed).
-    cudaDeviceSetLimit(cudaLimitStackSize, 2 * 1024);
+    CUDA_CHECK(cudaDeviceSetLimit(cudaLimitStackSize, 2 * 1024));
 
     cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, gpuId);
+    CUDA_CHECK(cudaGetDeviceProperties(&prop, gpuId));
     printf("GPU %d: %s (SM %d.%d, %d MPs)\n", gpuId, prop.name, prop.major, prop.minor, prop.multiProcessorCount);
 
     // Copy patterns to GPU constant memory (only in legacy prefix mode;
@@ -2167,7 +2204,7 @@ int main(int argc, char** argv) {
         printf("Successfully copied %d patterns to GPU constant memory\n", copyCount);
     } else {
         int zero = 0;
-        cudaMemcpyToSymbol(d_num_patterns, &zero, sizeof(int));
+        CUDA_CHECK(cudaMemcpyToSymbol(d_num_patterns, &zero, sizeof(int)));
         printf("Direct mode: skipping legacy pattern copy (%d patterns)\n", numPatterns);
     }
 
@@ -2247,7 +2284,7 @@ int main(int argc, char** argv) {
         }
     } else {
         int zero = 0;
-        cudaMemcpyToSymbol(d_num_targets, &zero, sizeof(int));
+        CUDA_CHECK(cudaMemcpyToSymbol(d_num_targets, &zero, sizeof(int)));
     }
     err = cudaMemcpyToSymbol(d_direct_mode, &directMode, sizeof(int));
     if (err != cudaSuccess) {
@@ -2275,14 +2312,46 @@ int main(int argc, char** argv) {
         format_256bit_hex(endKey, ehex);
         printf("Range end: 0x%s (inclusive)\n", ehex);
     }
-    cudaMemcpyToSymbol(d_endKey, endKey, 32);
-    cudaMemcpyToSymbol(d_have_endx, &haveEndx, sizeof(int));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_endKey, endKey, 32));
+    CUDA_CHECK(cudaMemcpyToSymbol(d_have_endx, &haveEndx, sizeof(int)));
+
+    // Memory preflight: check available VRAM before allocating.
+    {
+        size_t freeMem = 0, totalMem = 0;
+        CUDA_CHECK(cudaMemGetInfo(&freeMem, &totalMem));
+        size_t keyBytes = (size_t)nbThread * 64;
+        size_t foundBytes = (size_t)(1 + MAX_FOUND * 8) * 4;
+        size_t workBytes = (size_t)nbThread * (GRP_SIZE / 2 + 1) * 4 * sizeof(uint64_t) * 2;
+        size_t required = keyBytes + foundBytes + workBytes;
+        size_t safetyMargin = 512 * 1024 * 1024ULL;  // 512 MB for driver/context/constants
+        printf("VRAM: %.0f MB free / %.0f MB total, need %.0f MB + %.0f MB safety\n",
+               freeMem / 1048576.0, totalMem / 1048576.0,
+               required / 1048576.0, safetyMargin / 1048576.0);
+        if (required + safetyMargin > freeMem) {
+            if (threadCount > 0) {
+                printf("Error: Requested %d threads need %.0f MB but only %.0f MB free.\n",
+                       nbThread, (required + safetyMargin) / 1048576.0, freeMem / 1048576.0);
+                return 1;
+            }
+            // Auto-reduce thread count to fit
+            size_t perThread = 64 + (GRP_SIZE / 2 + 1) * 4 * sizeof(uint64_t) * 2;
+            int maxThreads = (int)((freeMem - safetyMargin - foundBytes) / perThread);
+            maxThreads = (maxThreads / NB_THREAD_PER_GROUP) * NB_THREAD_PER_GROUP;
+            if (maxThreads < NB_THREAD_PER_GROUP) {
+                printf("Error: Not enough VRAM even for %d threads.\n", NB_THREAD_PER_GROUP);
+                return 1;
+            }
+            printf("Auto-reducing threads from %d to %d to fit available VRAM.\n", nbThread, maxThreads);
+            nbThread = maxThreads;
+            g_nbThread = nbThread;
+        }
+    }
 
     printf("Using %d threads (mode: %s)\n", nbThread, directMode ? "direct" : "prefix");
-    uint64_t* d_keys;
-    uint32_t* d_found;
-    uint64_t* d_dx;     // Global memory for dx arrays (avoids stack overflow)
-    uint64_t* d_subp;   // Global memory for subp arrays (avoids stack overflow)
+    uint64_t* d_keys = nullptr;
+    uint32_t* d_found = nullptr;
+    uint64_t* d_dx = nullptr;
+    uint64_t* d_subp = nullptr;
 
     err = cudaMalloc(&d_keys, nbThread * 64);
     if (err != cudaSuccess) {
@@ -2317,10 +2386,10 @@ int main(int argc, char** argv) {
 
     if (!h_keys) {
         printf("Error: Failed to allocate host key buffer\n");
-        cudaFree(d_keys);
-        cudaFree(d_found);
-        cudaFree(d_dx);
-        cudaFree(d_subp);
+        cuda_free_if_set(d_keys);
+        cuda_free_if_set(d_found);
+        cuda_free_if_set(d_dx);
+        cuda_free_if_set(d_subp);
         return 1;
     }
 
@@ -2330,10 +2399,10 @@ int main(int argc, char** argv) {
         bool isHex = (startHex != NULL);
         if (!init_keys_from_start(h_keys, nbThread, startStr, isHex)) {
             free(h_keys);
-            cudaFree(d_keys);
-            cudaFree(d_found);
-            cudaFree(d_dx);
-            cudaFree(d_subp);
+            cuda_free_if_set(d_keys);
+            cuda_free_if_set(d_found);
+            cuda_free_if_set(d_dx);
+            cuda_free_if_set(d_subp);
             return 1;
         }
     } else {
@@ -2364,30 +2433,30 @@ int main(int argc, char** argv) {
             printf("  %s -patterns patterns.txt -state gpu0.state\n", argv[0]);
             printf("\n");
             free(h_keys);
-            cudaFree(d_keys);
-            cudaFree(d_found);
-            cudaFree(d_dx);
-            cudaFree(d_subp);
+            cuda_free_if_set(d_keys);
+            cuda_free_if_set(d_found);
+            cuda_free_if_set(d_dx);
+            cuda_free_if_set(d_subp);
             return 1;
         }
     }
 
     if (!configure_sequential_delta(nbThread)) {
         free(h_keys);
-        cudaFree(d_keys);
-        cudaFree(d_found);
-        cudaFree(d_dx);
-        cudaFree(d_subp);
+        cuda_free_if_set(d_keys);
+        cuda_free_if_set(d_found);
+        cuda_free_if_set(d_dx);
+        cuda_free_if_set(d_subp);
         return 1;
     }
 
     printf("Copying keys to device...\n"); fflush(stdout);
-    cudaMemcpy(d_keys, h_keys, nbThread * 64, cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMemcpy(d_keys, h_keys, nbThread * 64, cudaMemcpyHostToDevice));
     printf("Keys copied\n"); fflush(stdout);
 
-    uint32_t* h_found;
+    uint32_t* h_found = nullptr;
     printf("Allocating h_found...\n"); fflush(stdout);
-    cudaMallocHost(&h_found, (1 + MAX_FOUND * 8) * 4);
+    CUDA_CHECK(cudaMallocHost(&h_found, (1 + MAX_FOUND * 8) * 4));
     printf("h_found allocated\n"); fflush(stdout);
 
     printf("\nMode: SEQUENTIAL (range search)\n"); fflush(stdout);
@@ -2410,12 +2479,12 @@ int main(int argc, char** argv) {
             break;
         }
 
-        cudaMemcpy(h_found, d_found, 4, cudaMemcpyDeviceToHost);
+        CUDA_CHECK(cudaMemcpy(h_found, d_found, 4, cudaMemcpyDeviceToHost));
         if (h_found[0] > 0) {
             uint32_t nFound = h_found[0];
             if (nFound > MAX_FOUND) nFound = MAX_FOUND;
 
-            cudaMemcpy(h_found, d_found, (1 + nFound * 8) * 4, cudaMemcpyDeviceToHost);
+            CUDA_CHECK(cudaMemcpy(h_found, d_found, (1 + nFound * 8) * 4, cudaMemcpyDeviceToHost));
 
             FILE* mf = fopen(outputFile, "a");
             if (!mf) {
@@ -2481,6 +2550,7 @@ int main(int argc, char** argv) {
                 fprintf(mf, "  Hash160: ");
                 for (int b = 0; b < 20; b++) fprintf(mf, "%02x", hash160[b]);
                 fprintf(mf, "\n  VerifiedAddress: %s\n", verifiedAddr);
+                fprintf(mf, "  verified=yes\n");
                 fprintf(mf, "  tid=%u incr=%d parity=%d iter=%lu\n\n", tid, incr, isOdd, iter);
 
                 verifiedCount++;
@@ -2515,9 +2585,17 @@ int main(int argc, char** argv) {
             }
         }
 
+        // Check signal flag in main loop (async-signal-safe pattern)
+        if (g_stop_requested) {
+            printf("\nStopping...\n");
+            running = false;
+        }
+
         if (iter % 500 == 0) {
-            cudaMemcpy(h_keys, d_keys, nbThread * 64, cudaMemcpyDeviceToHost);
-            save_state_seq(stateFile, h_keys, nbThread, total, iter, g_baseKey);
+            CUDA_CHECK(cudaMemcpy(h_keys, d_keys, nbThread * 64, cudaMemcpyDeviceToHost));
+            if (!save_state_seq(stateFile, h_keys, nbThread, total, iter, g_baseKey)) {
+                printf("Warning: Periodic state save failed at iter=%lu\n", iter);
+            }
         }
 
         if (iter % 10 == 0 || verbose) {  // More frequent updates since each iter covers 67M keys
@@ -2532,14 +2610,18 @@ int main(int argc, char** argv) {
 
     printf("\n\nSaving state...\n");
     cudaMemcpy(h_keys, d_keys, nbThread * 64, cudaMemcpyDeviceToHost);
-    save_state_seq(stateFile, h_keys, nbThread, total, iter, g_baseKey);
+    if (save_state_seq(stateFile, h_keys, nbThread, total, iter, g_baseKey)) {
+        printf("State saved successfully to %s\n", stateFile);
+    } else {
+        printf("ERROR: Final state save failed!\n");
+    }
     printf("Total: %.2fB keys\n", total/1e9);
 
-    cudaFree(d_keys);
-    cudaFree(d_found);
-    cudaFree(d_dx);
-    cudaFree(d_subp);
-    cudaFreeHost(h_found);
+    cuda_free_if_set(d_keys);
+    cuda_free_if_set(d_found);
+    cuda_free_if_set(d_dx);
+    cuda_free_if_set(d_subp);
+    cuda_free_host_if_set(h_found);
     free(h_keys);
 
     return 0;

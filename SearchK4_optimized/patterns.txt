@@ -1,0 +1,5 @@
+# Bitcoin Puzzle Transaction targets (uncompressed addresses).
+# Used by default in examples: ./searchk4_fast -patterns patterns.txt -direct -bits 71
+#
+# Puzzle #71
+1EHNa6Q4Jz2uvNExL497mE43ikXhwF6kZm

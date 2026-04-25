@@ -25,11 +25,11 @@ Every reported match is re-derived from scratch on the host (scalar_mult_G → S
 
 ### `-direct` (recommended)
 
-Hash160-direct mode. The host Base58-decodes each address in `patterns.txt`, uploads 20-byte hash160s to GPU constant memory, and the kernel compares the computed hash160 against the target list directly. No Base58 in the hot path. Also skips the uncompressed-address check — puzzle addresses are compressed-derived.
+Hash160-direct mode. The host Base58-decodes each address in `patterns.txt`, uploads 20-byte hash160s to GPU global memory, and the kernel compares the computed hash160 against a bloom filter (64 KB in global memory, hot in L2 cache) followed by binary search on match. No Base58 in the hot path. Checks **uncompressed** public keys for both Y and -Y parities.
 
-Requires full 34-character addresses in `patterns.txt` — not prefixes. Lines that don't decode as valid mainnet P2PKH addresses are rejected.
+Requires full 34-character addresses in `patterns.txt` — not prefixes. Lines that don't decode as valid mainnet P2PKH addresses are rejected. Supports up to 8192 target addresses.
 
-Default threads: **16384**.
+Default threads: **393216** (auto-reduced if VRAM is insufficient).
 
 ### Legacy prefix mode (default)
 
@@ -48,7 +48,7 @@ Default threads: **1024** (register pressure from the wider hash state keeps occ
 | `-endx <hex>` | End key (inclusive). Scan terminates when exhausted. |
 | `-bits <N>` | Shortcut: set range to `[2^(N-1), 2^N - 1]`. Overridden by explicit `-startx`/`-endx`. |
 | `-state <file>` | Resume from state file. See "Resume behaviour" below. |
-| `-threads <N>` | CUDA thread count. Must be ≥ 64 and a multiple of 64. Default: 16384 (direct), 1024 (prefix). |
+| `-threads <N>` | CUDA thread count. Must be ≥ 64 and a multiple of 64. Default: 393216 (direct), 1024 (prefix). Auto-reduced if VRAM insufficient. |
 | `-gpu <id>` | GPU device ID. |
 | `-o <file>` | Output file for matches. Default: `found_k4_gpu<id>.txt`. |
 | `-verbose` | Print per-iteration progress. |
@@ -115,7 +115,7 @@ The build links a small C translation unit (`ripemd160.c`) alongside the CUDA so
 
 ## Smoke tests
 
-- `make smoke` runs Puzzle #1 (private key = 1, address `1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH`) end-to-end. Should complete in a fraction of a second. Output must contain `verified=yes` and no `UNVERIFIED` lines.
+- `make smoke` runs Puzzle #1 (private key = 1, uncompressed address `1EHNa6Q4Jz2uvNExL497mE43ikXhwF6kZm`) end-to-end. Should complete in a fraction of a second. Output must contain `verified=yes` and no `UNVERIFIED` lines.
 - `make test` runs a short prefix-mode search against a small prefix set (no guaranteed match — this just confirms the binary launches and the kernel runs).
 
 ## Safety / restraint
@@ -123,6 +123,17 @@ The build links a small C translation unit (`ripemd160.c`) alongside the CUDA so
 1. `-direct` mode requires full P2PKH addresses. Prefixes are rejected. The kernel only fires on an exact 20-byte hash160 match.
 2. Range clamping is available and documented. `-endx` or `-bits N` constrain the scan.
 3. `patterns.txt` ships with exactly four addresses, all Bitcoin Puzzle Transaction targets with public ranges and designated solver rewards. No dormant third-party addresses.
+
+## Troubleshooting
+
+| Error | Fix |
+|---|---|
+| `nvcc: not found` | Ensure CUDA toolkit is installed and `CUDA_PATH` is set. |
+| `no kernel image is available for execution on the device` | Rebuild with the correct `CCAP` for your GPU: `make clean && make CCAP=86`. |
+| `cudaErrorMemoryAllocation` | Reduce thread count: `-threads 65536`. The program prints VRAM requirements before allocation. |
+| `State version mismatch` | Delete old `.state` files and restart. State files are not portable across versions. |
+| `State thread count mismatch` | State files are tied to the thread count used when created. Delete the state file or use `-threads` matching the saved count. |
+| `-direct mode skipping non-address pattern` | Direct mode requires full 34-character P2PKH addresses (starting with `1`), not prefixes. |
 
 ## Credits
 
