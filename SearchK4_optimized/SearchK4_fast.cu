@@ -42,13 +42,14 @@ static int cmp_h160_host(const void *a, const void *b) {
 #define MAX_FOUND 65536
 #define STEP_SIZE 1024
 #define K4_MAX_PATTERNS 256
-#define K4_MAX_TARGETS 4096
+#define K4_MAX_TARGETS 8192
 #define K4_PATTERN_MAX_LEN 35
 #define P2PKH 0
 #define K4_STATE_VERSION 2U
 
 // Bloom filter for fast hash160 target pre-screening.
-// 64 KB filter with 3 hash functions gives <0.01% false positive rate for 4096 targets.
+// 64 KB filter in global memory (hot in L2 cache) with 3 hash functions.
+// At 5000 targets: fill ~2.9%, false positive rate ~0.002%.
 #define BLOOM_SIZE_BITS  (512 * 1024)  // 512Kbit = 64KB
 #define BLOOM_SIZE_U32   (BLOOM_SIZE_BITS / 32)
 #define BLOOM_NUM_HASHES 3
@@ -909,6 +910,7 @@ __device__ __forceinline__ int _CmpH160(const uint32_t *a, const uint32_t *b) {
 }
 
 // Bloom filter probe: returns true if h *might* be in the target set.
+// Reads from d_bloom_filter in global memory (stays hot in L2 cache).
 __device__ __forceinline__ bool _BloomCheck(const uint32_t *h) {
     uint32_t h1 = h[0] ^ (h[1] * 2654435761u);
     uint32_t bit1 = h1 % BLOOM_SIZE_BITS;
@@ -953,12 +955,9 @@ __device__ void OutputMatchK4(uint32_t* out, uint32_t tid, int32_t incr, uint32_
     }
 }
 
-// Check compressed addresses (uses symmetry - both Y and -Y checked).
-// In direct mode: skip Base58 + uncompressed entirely, do 2 hashes + 2
-// direct 20-byte compares. All puzzle addresses are compressed-derived,
-// so the uncompressed paths chase a class of match that doesn't exist.
-// In legacy prefix mode: generate Base58 and prefix-match for 4 paths
-// (2 compressed + 2 uncompressed).
+// Check uncompressed addresses (both Y and -Y) using shared-memory bloom filter.
+// In direct mode: compute hash160 of uncompressed pubkey, bloom-check via shared mem.
+// In legacy prefix mode: falls through to Base58 + prefix match (no bloom).
 __device__ __noinline__ void CheckHashCompSymK4(
     uint64_t* px, uint64_t* py, uint32_t tid, int32_t incr,
     uint32_t maxFound, uint32_t* out
@@ -2121,10 +2120,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Default threads: 1024 in legacy prefix mode (register pressure from
-    // uncompressed + Base58 paths), 16384 in direct mode (hot path is
-    // 2 hashes + 2 raw 20-byte compares, much lighter register state).
-    int defaultThreads = directMode ? 16384 : 1024;
+    // Default threads: 1024 in legacy prefix mode, 393216 in direct mode.
+    // Higher thread count improves latency hiding and occupancy with the
+    // reduced 2KB stack (was 36KB). Benchmarked optimal on RTX 5080.
+    int defaultThreads = directMode ? 393216 : 1024;
     int nbThread = (threadCount > 0) ? threadCount : defaultThreads;
     if (nbThread < NB_THREAD_PER_GROUP || (nbThread % NB_THREAD_PER_GROUP) != 0) {
         printf("Error: -threads must be at least %d and a multiple of %d.\n",
@@ -2137,8 +2136,9 @@ int main(int argc, char** argv) {
     signal(SIGTERM, sighandler);
     cudaSetDevice(gpuId);
 
-    // Increase stack size limit for larger kernels with uncompressed address support
-    cudaDeviceSetLimit(cudaLimitStackSize, 36 * 1024);  // 36KB per thread (kernel needs ~33KB)
+    // Stack size: kernel uses ~1104 bytes (measured by nvcc). 2KB gives headroom.
+    // Previous 36KB was set for combined compressed+uncompressed paths (now removed).
+    cudaDeviceSetLimit(cudaLimitStackSize, 2 * 1024);
 
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, gpuId);

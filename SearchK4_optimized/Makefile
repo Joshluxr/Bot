@@ -13,7 +13,7 @@ endif
 NVCC_FLAGS = -O3 -std=c++14 \
     -gencode=arch=compute_$(CCAP),code=sm_$(CCAP) \
     --ptxas-options=-v \
-    -maxrregcount=96 \
+    -maxrregcount=128 \
     -I. \
     -lineinfo
 
@@ -55,8 +55,8 @@ clean:
 # direct-match comparison, private-key reconstruction, host-side RIPEMD-160
 # verification, WIF formatting. Look for "verified=yes" in the output file.
 smoke: searchk4_fast
-	@echo "Smoke test: Puzzle #1 (key=1, expected: 1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH)"
-	@echo "1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH" > _smoke_patterns.txt
+	@echo "Smoke test: Puzzle #1 (key=1, expected uncompressed: 1EHNa6Q4Jz2uvNExL497mE43ikXhwF6kZm)"
+	@echo "1EHNa6Q4Jz2uvNExL497mE43ikXhwF6kZm" > _smoke_patterns.txt
 	timeout 30 ./searchk4_fast -patterns _smoke_patterns.txt -direct -bits 1 -threads 64 -o _smoke_found.txt || true
 	@rm -f _smoke_patterns.txt *.state
 	@echo

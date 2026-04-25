@@ -50,7 +50,7 @@ __device__ __constant__ uint32_t I[] = {
   0x5be0cd19ul,
 };
 
-//#define ASSEMBLY_SIGMA
+#define ASSEMBLY_SIGMA
 #ifdef ASSEMBLY_SIGMA
 
 __device__ __forceinline__ uint32_t S0(uint32_t x) {
