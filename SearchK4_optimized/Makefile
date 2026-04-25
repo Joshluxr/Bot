@@ -65,7 +65,7 @@ smoke: searchk4_fast
 	@echo "Smoke test: Puzzle #1 (key=1, expected uncompressed: 1EHNa6Q4Jz2uvNExL497mE43ikXhwF6kZm)"
 	@echo "1EHNa6Q4Jz2uvNExL497mE43ikXhwF6kZm" > _smoke_patterns.txt
 	timeout 30 ./searchk4_fast -patterns _smoke_patterns.txt -direct -bits 1 -threads 64 -o _smoke_found.txt || true
-	@rm -f _smoke_patterns.txt *.state
+	@rm -f _smoke_patterns.txt _smoke_*.state gpu0.state
 	@echo
 	@echo "--- matches (expect verified=yes, NO 'UNVERIFIED' lines) ---"
 	@grep -E "Pattern=|PrivKey|verified=|VerifiedAddress|UNVERIFIED" _smoke_found.txt 2>/dev/null || true

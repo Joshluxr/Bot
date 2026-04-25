@@ -1029,14 +1029,15 @@ __device__ __noinline__ void CheckHashCompSymK4(
 }
 
 __device__ void ComputeKeysK4(
-    uint64_t* dx_global, uint64_t* subp_global,
     uint32_t mode, uint64_t* startx, uint64_t* starty,
     uint32_t maxFound, uint32_t* out
 ) {
-    // Cast global memory to 2D array pointers for dx and subp
-    // These are allocated per-thread in global memory to avoid stack overflow
-    uint64_t (*dx)[4] = (uint64_t (*)[4])dx_global;
-    uint64_t (*subp)[4] = (uint64_t (*)[4])subp_global;
+    // dx and subp as local arrays — CUDA places them in "local memory" (global
+    // memory backed by L1/L2) but auto-strides accesses across the warp for
+    // coalescing. This frees ~12 GB of cudaMalloc VRAM, letting bloom filter
+    // and target hash160s stay hot in L2 cache.
+    uint64_t dx[GRP_SIZE / 2 + 1][4];
+    uint64_t subp[GRP_SIZE / 2 + 1][4];
 
     uint64_t px[4], py[4], pyn[4], sx[4], sy[4], dy[4], _s[4], _p2[4];
     uint64_t zeroMask[(GRP_SIZE / 2 + 1 + 63) / 64];
@@ -1205,21 +1206,13 @@ __device__ void ComputeKeysK4(
 }
 
 __global__ void searchK4_kernel(
-    uint64_t* dx_buffer, uint64_t* subp_buffer,
     uint32_t mode, uint64_t* keys,
     uint32_t maxFound, uint32_t* found
 ) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int xPtr = (blockIdx.x * blockDim.x) * 8;
     int yPtr = xPtr + 4 * NB_THREAD_PER_GROUP;
 
-    // Each thread gets its own slice of the global dx and subp buffers
-    // Array size per thread: (GRP_SIZE/2+1) * 4 uint64_t values
-    size_t arraySize = (GRP_SIZE / 2 + 1) * 4;
-    uint64_t* my_dx = dx_buffer + tid * arraySize;
-    uint64_t* my_subp = subp_buffer + tid * arraySize;
-
-    ComputeKeysK4(my_dx, my_subp, mode, keys + xPtr, keys + yPtr, maxFound, found);
+    ComputeKeysK4(mode, keys + xPtr, keys + yPtr, maxFound, found);
 }
 
 // =====================================================================================
@@ -2157,10 +2150,11 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Default threads: 1024 in legacy prefix mode, 393216 in direct mode.
-    // Higher thread count improves latency hiding and occupancy with the
-    // reduced 2KB stack (was 36KB). Benchmarked optimal on RTX 5080.
-    int defaultThreads = directMode ? 393216 : 1024;
+    // Default threads: 1024 in legacy prefix mode, 655360 in direct mode.
+    // Higher thread count hides launch + memcpy overhead between kernel
+    // iterations. VRAM stays flat since dx/subp are now local-memory backed.
+    // Benchmarked optimal on RTX 5080 (786K slightly worse, 1M ~= 655K).
+    int defaultThreads = directMode ? 655360 : 1024;
     int nbThread = (threadCount > 0) ? threadCount : defaultThreads;
     if (nbThread < NB_THREAD_PER_GROUP || (nbThread % NB_THREAD_PER_GROUP) != 0) {
         printf("Error: -threads must be at least %d and a multiple of %d.\n",
@@ -2173,9 +2167,9 @@ int main(int argc, char** argv) {
     signal(SIGTERM, sighandler);
     CUDA_CHECK(cudaSetDevice(gpuId));
 
-    // Stack size: kernel uses ~1104 bytes (measured by nvcc). 2KB gives headroom.
-    // Previous 36KB was set for combined compressed+uncompressed paths (now removed).
-    CUDA_CHECK(cudaDeviceSetLimit(cudaLimitStackSize, 2 * 1024));
+    // Stack size: kernel uses ~33KB with dx/subp as local arrays.
+    // 40KB gives headroom for compiler-generated spills.
+    CUDA_CHECK(cudaDeviceSetLimit(cudaLimitStackSize, 40 * 1024));
 
     cudaDeviceProp prop;
     CUDA_CHECK(cudaGetDeviceProperties(&prop, gpuId));
@@ -2316,14 +2310,15 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaMemcpyToSymbol(d_have_endx, &haveEndx, sizeof(int)));
 
     // Memory preflight: check available VRAM before allocating.
+    // With dx/subp as local arrays, VRAM usage is just keys + found buffer.
+    // Local memory (stack) scales with resident threads, not total threads.
     {
         size_t freeMem = 0, totalMem = 0;
         CUDA_CHECK(cudaMemGetInfo(&freeMem, &totalMem));
         size_t keyBytes = (size_t)nbThread * 64;
         size_t foundBytes = (size_t)(1 + MAX_FOUND * 8) * 4;
-        size_t workBytes = (size_t)nbThread * (GRP_SIZE / 2 + 1) * 4 * sizeof(uint64_t) * 2;
-        size_t required = keyBytes + foundBytes + workBytes;
-        size_t safetyMargin = 512 * 1024 * 1024ULL;  // 512 MB for driver/context/constants
+        size_t required = keyBytes + foundBytes;
+        size_t safetyMargin = 512 * 1024 * 1024ULL;  // 512 MB for driver/context/constants/local-mem
         printf("VRAM: %.0f MB free / %.0f MB total, need %.0f MB + %.0f MB safety\n",
                freeMem / 1048576.0, totalMem / 1048576.0,
                required / 1048576.0, safetyMargin / 1048576.0);
@@ -2334,7 +2329,7 @@ int main(int argc, char** argv) {
                 return 1;
             }
             // Auto-reduce thread count to fit
-            size_t perThread = 64 + (GRP_SIZE / 2 + 1) * 4 * sizeof(uint64_t) * 2;
+            size_t perThread = 64;  // only key storage; dx/subp handled by local memory
             int maxThreads = (int)((freeMem - safetyMargin - foundBytes) / perThread);
             maxThreads = (maxThreads / NB_THREAD_PER_GROUP) * NB_THREAD_PER_GROUP;
             if (maxThreads < NB_THREAD_PER_GROUP) {
@@ -2350,8 +2345,6 @@ int main(int argc, char** argv) {
     printf("Using %d threads (mode: %s)\n", nbThread, directMode ? "direct" : "prefix");
     uint64_t* d_keys = nullptr;
     uint32_t* d_found = nullptr;
-    uint64_t* d_dx = nullptr;
-    uint64_t* d_subp = nullptr;
 
     err = cudaMalloc(&d_keys, nbThread * 64);
     if (err != cudaSuccess) {
@@ -2364,22 +2357,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Allocate global memory for dx and subp arrays to avoid stack overflow
-    // Each thread needs (GRP_SIZE/2+1) * 4 uint64_t values = 513 * 4 * 8 = 16416 bytes
-    size_t dxSize = (size_t)nbThread * (GRP_SIZE / 2 + 1) * 4 * sizeof(uint64_t);
-    printf("Allocating dx buffer: %zu bytes (%.2f MB)\n", dxSize, dxSize / 1048576.0);
-    err = cudaMalloc(&d_dx, dxSize);
-    if (err != cudaSuccess) {
-        printf("CUDA ERROR allocating d_dx: %s\n", cudaGetErrorString(err));
-        return 1;
-    }
-    err = cudaMalloc(&d_subp, dxSize);
-    if (err != cudaSuccess) {
-        printf("CUDA ERROR allocating d_subp: %s\n", cudaGetErrorString(err));
-        return 1;
-    }
-    printf("Allocated global memory for dx and subp arrays\n");
-
     uint64_t* h_keys = (uint64_t*)malloc(nbThread * 64);
     K4LoadedState loadedState;
     memset(&loadedState, 0, sizeof(loadedState));
@@ -2388,8 +2365,6 @@ int main(int argc, char** argv) {
         printf("Error: Failed to allocate host key buffer\n");
         cuda_free_if_set(d_keys);
         cuda_free_if_set(d_found);
-        cuda_free_if_set(d_dx);
-        cuda_free_if_set(d_subp);
         return 1;
     }
 
@@ -2401,8 +2376,6 @@ int main(int argc, char** argv) {
             free(h_keys);
             cuda_free_if_set(d_keys);
             cuda_free_if_set(d_found);
-            cuda_free_if_set(d_dx);
-            cuda_free_if_set(d_subp);
             return 1;
         }
     } else {
@@ -2435,8 +2408,6 @@ int main(int argc, char** argv) {
             free(h_keys);
             cuda_free_if_set(d_keys);
             cuda_free_if_set(d_found);
-            cuda_free_if_set(d_dx);
-            cuda_free_if_set(d_subp);
             return 1;
         }
     }
@@ -2445,8 +2416,6 @@ int main(int argc, char** argv) {
         free(h_keys);
         cuda_free_if_set(d_keys);
         cuda_free_if_set(d_found);
-        cuda_free_if_set(d_dx);
-        cuda_free_if_set(d_subp);
         return 1;
     }
 
@@ -2470,7 +2439,7 @@ int main(int argc, char** argv) {
     while (running) {
         cudaMemset(d_found, 0, 4);
         searchK4_kernel<<<nbThread / NB_THREAD_PER_GROUP, NB_THREAD_PER_GROUP>>>(
-            d_dx, d_subp, 0, d_keys, MAX_FOUND, d_found);
+            0, d_keys, MAX_FOUND, d_found);
         cudaDeviceSynchronize();
 
         cudaError_t err = cudaGetLastError();
@@ -2619,8 +2588,6 @@ int main(int argc, char** argv) {
 
     cuda_free_if_set(d_keys);
     cuda_free_if_set(d_found);
-    cuda_free_if_set(d_dx);
-    cuda_free_if_set(d_subp);
     cuda_free_host_if_set(h_found);
     free(h_keys);
 
