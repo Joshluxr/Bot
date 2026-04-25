@@ -1,0 +1,1120 @@
+/*
+ * LEGACY / REFERENCE IMPLEMENTATION
+ *
+ * The maintained and patched implementation in this repository is SearchK4_fast.cu.
+ * This file is kept for historical comparison and ad hoc experiments only.
+ */
+
+/*
+ * SearchK4.cu - Direct vanity address search with sequential keyspace support
+ * Uses proper GPU Base58 encoding and string matching
+ * Based on VanitySearch by Jean Luc PONS and BloomSearch32K3 sequential logic
+ *
+ * Features:
+ * - Sequential keyspace search from specified start point
+ * - Supports both decimal and hex start values
+ * - Full private key reconstruction on match
+ * - Resume from state files
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <time.h>
+#include <signal.h>
+#include <sys/stat.h>
+
+#include "GPUGroup.h"
+#include "GPUMath.h"
+#include "GPUHash.h"
+
+#define NB_THREAD_PER_GROUP 512
+#define MAX_FOUND 65536
+#define STEP_SIZE 1024
+#define K4_MAX_PATTERNS 256
+#define P2PKH 0
+
+// Base58 alphabet
+__device__ __constant__ char pszBase58[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+// Pattern storage - each pattern is null-terminated, max 35 chars
+__device__ __constant__ char d_patterns[K4_MAX_PATTERNS][36];
+__device__ __constant__ int d_pattern_lens[K4_MAX_PATTERNS];
+__device__ __constant__ int d_num_patterns;
+
+volatile bool running = true;
+void sighandler(int s) { running = false; printf("\nStopping...\n"); }
+
+// =====================================================================================
+// SECP256K1 CPU-SIDE ELLIPTIC CURVE MATH (for key initialization)
+// =====================================================================================
+
+static const uint64_t SECP_P[4] = {
+    0xFFFFFFFEFFFFFC2FULL, 0xFFFFFFFFFFFFFFFFULL,
+    0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL
+};
+
+static const uint64_t SECP_N[4] = {  // Group order
+    0xBFD25E8CD0364141ULL, 0xBAAEDCE6AF48A03BULL,
+    0xFFFFFFFFFFFFFFFEULL, 0xFFFFFFFFFFFFFFFFULL
+};
+
+static const uint64_t SECP_GX[4] = {
+    0x59F2815B16F81798ULL, 0x029BFCDB2DCE28D9ULL,
+    0x55A06295CE870B07ULL, 0x79BE667EF9DCBBACULL
+};
+
+static const uint64_t SECP_GY[4] = {
+    0x9C47D08FFB10D4B8ULL, 0xFD17B448A6855419ULL,
+    0x5DA4FBFC0E1108A8ULL, 0x483ADA7726A3C465ULL
+};
+
+// Global base key for private key reconstruction
+static uint64_t g_baseKey[4] = {0, 0, 0, 0};
+static bool g_sequentialMode = false;
+static int g_nbThread = 65536;
+
+// 256-bit comparison
+static int cmp256(const uint64_t* a, const uint64_t* b) {
+    for (int i = 3; i >= 0; i--) {
+        if (a[i] > b[i]) return 1;
+        if (a[i] < b[i]) return -1;
+    }
+    return 0;
+}
+
+// 256-bit addition: r = a + b, returns carry
+static uint64_t add256(uint64_t* r, const uint64_t* a, const uint64_t* b) {
+    __uint128_t c = 0;
+    for (int i = 0; i < 4; i++) {
+        c += (__uint128_t)a[i] + b[i];
+        r[i] = (uint64_t)c;
+        c >>= 64;
+    }
+    return (uint64_t)c;
+}
+
+// 256-bit subtraction: r = a - b, returns borrow
+static uint64_t sub256(uint64_t* r, const uint64_t* a, const uint64_t* b) {
+    __uint128_t c = 0;
+    for (int i = 0; i < 4; i++) {
+        __uint128_t diff = (__uint128_t)a[i] - b[i] - c;
+        r[i] = (uint64_t)diff;
+        c = (diff >> 64) ? 1 : 0;
+    }
+    return c;
+}
+
+// Add 64-bit value to 256-bit: r = a + b
+static uint64_t add256_scalar(uint64_t* r, const uint64_t* a, uint64_t b) {
+    __uint128_t c = b;
+    for (int i = 0; i < 4; i++) {
+        c += a[i];
+        r[i] = (uint64_t)c;
+        c >>= 64;
+    }
+    return (uint64_t)c;
+}
+
+// Modular addition: r = (a + b) mod p
+static void mod_add(uint64_t* r, const uint64_t* a, const uint64_t* b) {
+    uint64_t c = add256(r, a, b);
+    if (c || cmp256(r, SECP_P) >= 0) {
+        sub256(r, r, SECP_P);
+    }
+}
+
+// Modular subtraction: r = (a - b) mod p
+static void mod_sub(uint64_t* r, const uint64_t* a, const uint64_t* b) {
+    uint64_t c = sub256(r, a, b);
+    if (c) {
+        add256(r, r, SECP_P);
+    }
+}
+
+// Modular multiplication: r = (a * b) mod p
+static void mod_mul(uint64_t* r, const uint64_t* a, const uint64_t* b) {
+    __uint128_t t[8] = {0};
+    for (int i = 0; i < 4; i++) {
+        __uint128_t c = 0;
+        for (int j = 0; j < 4; j++) {
+            c += t[i + j] + (__uint128_t)a[i] * b[j];
+            t[i + j] = (uint64_t)c;
+            c >>= 64;
+        }
+        t[i + 4] = c;
+    }
+
+    uint64_t high[4] = {(uint64_t)t[4], (uint64_t)t[5], (uint64_t)t[6], (uint64_t)t[7]};
+    uint64_t low[4] = {(uint64_t)t[0], (uint64_t)t[1], (uint64_t)t[2], (uint64_t)t[3]};
+
+    // Reduce using secp256k1 special form: p = 2^256 - 2^32 - 977
+    // high * 2^256 mod p = high * (2^32 + 977) mod p
+    __uint128_t c = 0;
+    uint64_t hc[5];
+    for (int i = 0; i < 4; i++) {
+        c += (__uint128_t)high[i] * 0x1000003D1ULL;
+        hc[i] = (uint64_t)c;
+        c >>= 64;
+    }
+    hc[4] = (uint64_t)c;
+
+    c = 0;
+    for (int i = 0; i < 4; i++) {
+        c += (__uint128_t)low[i] + hc[i];
+        r[i] = (uint64_t)c;
+        c >>= 64;
+    }
+    c += hc[4];
+
+    // Final reduction if needed
+    while (c || cmp256(r, SECP_P) >= 0) {
+        uint64_t borrow = sub256(r, r, SECP_P);
+        if (c) c--;
+        else if (borrow) {
+            add256(r, r, SECP_P);
+            break;
+        }
+    }
+}
+
+// Modular inversion using Fermat's little theorem: a^(-1) = a^(p-2) mod p
+static void mod_inv(uint64_t* r, const uint64_t* a) {
+    uint64_t exp[4] = {
+        0xFFFFFFFEFFFFFC2DULL, 0xFFFFFFFFFFFFFFFFULL,
+        0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL
+    };
+
+    uint64_t base[4], result[4] = {1, 0, 0, 0};
+    memcpy(base, a, 32);
+
+    for (int i = 0; i < 256; i++) {
+        if ((exp[i / 64] >> (i % 64)) & 1) {
+            mod_mul(result, result, base);
+        }
+        mod_mul(base, base, base);
+    }
+
+    memcpy(r, result, 32);
+}
+
+// Check if point is at infinity
+static int is_infinity(const uint64_t* x, const uint64_t* y) {
+    return (x[0] | x[1] | x[2] | x[3] | y[0] | y[1] | y[2] | y[3]) == 0;
+}
+
+// Point addition: R = P + Q
+static void point_add(uint64_t* rx, uint64_t* ry,
+                      const uint64_t* px, const uint64_t* py,
+                      const uint64_t* qx, const uint64_t* qy) {
+    if (is_infinity(px, py)) {
+        memcpy(rx, qx, 32); memcpy(ry, qy, 32); return;
+    }
+    if (is_infinity(qx, qy)) {
+        memcpy(rx, px, 32); memcpy(ry, py, 32); return;
+    }
+
+    uint64_t s[4], dx[4], dy[4], s2[4], tmp[4];
+
+    mod_sub(dx, qx, px);
+
+    if ((dx[0] | dx[1] | dx[2] | dx[3]) == 0) {
+        mod_sub(dy, qy, py);
+        if ((dy[0] | dy[1] | dy[2] | dy[3]) == 0) {
+            // P == Q, use point doubling formula
+            mod_mul(s, px, px);
+            mod_add(tmp, s, s);
+            mod_add(s, tmp, s);  // s = 3*x^2
+            mod_add(dy, py, py);
+            mod_inv(tmp, dy);
+            mod_mul(s, s, tmp);  // s = 3*x^2 / (2*y)
+        } else {
+            // P == -Q, result is infinity
+            memset(rx, 0, 32); memset(ry, 0, 32); return;
+        }
+    } else {
+        mod_sub(dy, qy, py);
+        mod_inv(tmp, dx);
+        mod_mul(s, dy, tmp);  // s = (qy - py) / (qx - px)
+    }
+
+    mod_mul(s2, s, s);
+    mod_sub(rx, s2, px);
+    mod_sub(rx, rx, qx);
+
+    mod_sub(tmp, px, rx);
+    mod_mul(ry, s, tmp);
+    mod_sub(ry, ry, py);
+}
+
+// Point doubling: R = 2*P
+static void point_double(uint64_t* rx, uint64_t* ry,
+                         const uint64_t* px, const uint64_t* py) {
+    if (is_infinity(px, py) || (py[0] | py[1] | py[2] | py[3]) == 0) {
+        memset(rx, 0, 32); memset(ry, 0, 32); return;
+    }
+
+    uint64_t s[4], s2[4], tmp[4], dy[4];
+
+    mod_mul(s, px, px);
+    mod_add(tmp, s, s);
+    mod_add(s, tmp, s);  // s = 3*x^2
+    mod_add(dy, py, py);
+    mod_inv(tmp, dy);
+    mod_mul(s, s, tmp);  // s = 3*x^2 / (2*y)
+
+    mod_mul(s2, s, s);
+    mod_sub(rx, s2, px);
+    mod_sub(rx, rx, px);
+
+    mod_sub(tmp, px, rx);
+    mod_mul(ry, s, tmp);
+    mod_sub(ry, ry, py);
+}
+
+// Scalar multiplication: R = k * G
+static void scalar_mult_G(uint64_t* rx, uint64_t* ry, const uint64_t* k) {
+    uint64_t qx[4], qy[4];
+    uint64_t tmpx[4], tmpy[4];
+
+    memset(rx, 0, 32);
+    memset(ry, 0, 32);
+
+    memcpy(qx, SECP_GX, 32);
+    memcpy(qy, SECP_GY, 32);
+
+    for (int i = 0; i < 256; i++) {
+        if ((k[i / 64] >> (i % 64)) & 1) {
+            point_add(tmpx, tmpy, rx, ry, qx, qy);
+            memcpy(rx, tmpx, 32);
+            memcpy(ry, tmpy, 32);
+        }
+        point_double(tmpx, tmpy, qx, qy);
+        memcpy(qx, tmpx, 32);
+        memcpy(qy, tmpy, 32);
+    }
+}
+
+// =====================================================================================
+// KEY PARSING FUNCTIONS
+// =====================================================================================
+
+// Convert decimal string to 256-bit integer
+static void decimal_to_256bit(const char* decimal, uint64_t* result) {
+    memset(result, 0, 32);
+
+    // Skip any commas/underscores in the input (user-friendly format)
+    char clean[256];
+    int j = 0;
+    for (int i = 0; decimal[i] && j < 255; i++) {
+        if (decimal[i] >= '0' && decimal[i] <= '9') {
+            clean[j++] = decimal[i];
+        }
+    }
+    clean[j] = '\0';
+
+    // Process each digit: result = result * 10 + digit
+    for (int i = 0; clean[i]; i++) {
+        // Multiply by 10
+        __uint128_t carry = 0;
+        for (int k = 0; k < 4; k++) {
+            __uint128_t prod = (__uint128_t)result[k] * 10 + carry;
+            result[k] = (uint64_t)prod;
+            carry = prod >> 64;
+        }
+
+        // Add digit
+        int digit = clean[i] - '0';
+        carry = digit;
+        for (int k = 0; k < 4 && carry; k++) {
+            __uint128_t sum = (__uint128_t)result[k] + carry;
+            result[k] = (uint64_t)sum;
+            carry = sum >> 64;
+        }
+    }
+}
+
+// Convert hex string to 256-bit integer
+static void hex_to_256bit(const char* hex, uint64_t* result) {
+    memset(result, 0, 32);
+
+    // Skip 0x prefix
+    if (hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X')) {
+        hex += 2;
+    }
+
+    int len = strlen(hex);
+    uint8_t* bytes = (uint8_t*)result;
+
+    // Parse from right to left (little-endian)
+    for (int i = 0; i < len && i < 64; i++) {
+        char c = hex[len - 1 - i];
+        int val;
+        if (c >= '0' && c <= '9') val = c - '0';
+        else if (c >= 'a' && c <= 'f') val = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') val = c - 'A' + 10;
+        else continue;
+
+        int byteIdx = i / 2;
+        if (i % 2 == 0) {
+            bytes[byteIdx] = val;
+        } else {
+            bytes[byteIdx] |= val << 4;
+        }
+    }
+}
+
+// Format 256-bit as hex string
+static void format_256bit_hex(const uint64_t* val, char* out) {
+    sprintf(out, "%016lx%016lx%016lx%016lx", val[3], val[2], val[1], val[0]);
+}
+
+// =====================================================================================
+// GPU KERNEL CODE
+// =====================================================================================
+
+// GPU Base58 address generation (from VanitySearch)
+__device__ __noinline__ void _GetAddress(int type, uint32_t *hash, char *b58Add) {
+    uint32_t addBytes[16];
+    uint32_t s[16];
+    unsigned char A[25];
+    unsigned char *addPtr = A;
+    int retPos = 0;
+    unsigned char digits[128];
+
+    A[0] = (type == P2PKH) ? 0x00 : 0x05;
+    memcpy(A + 1, (char *)hash, 20);
+
+    addBytes[0] = __byte_perm(hash[0], (uint32_t)A[0], 0x4012);
+    addBytes[1] = __byte_perm(hash[0], hash[1], 0x3456);
+    addBytes[2] = __byte_perm(hash[1], hash[2], 0x3456);
+    addBytes[3] = __byte_perm(hash[2], hash[3], 0x3456);
+    addBytes[4] = __byte_perm(hash[3], hash[4], 0x3456);
+    addBytes[5] = __byte_perm(hash[4], 0x80, 0x3456);
+    addBytes[6] = 0; addBytes[7] = 0; addBytes[8] = 0; addBytes[9] = 0;
+    addBytes[10] = 0; addBytes[11] = 0; addBytes[12] = 0; addBytes[13] = 0;
+    addBytes[14] = 0; addBytes[15] = 0xA8;
+
+    SHA256Initialize(s);
+    SHA256Transform(s, addBytes);
+
+    #pragma unroll 8
+    for (int i = 0; i < 8; i++) addBytes[i] = s[i];
+
+    addBytes[8] = 0x80000000; addBytes[9] = 0; addBytes[10] = 0; addBytes[11] = 0;
+    addBytes[12] = 0; addBytes[13] = 0; addBytes[14] = 0; addBytes[15] = 0x100;
+
+    SHA256Initialize(s);
+    SHA256Transform(s, addBytes);
+
+    A[21] = ((uint8_t *)s)[3];
+    A[22] = ((uint8_t *)s)[2];
+    A[23] = ((uint8_t *)s)[1];
+    A[24] = ((uint8_t *)s)[0];
+
+    while (addPtr[0] == 0) {
+        b58Add[retPos++] = '1';
+        addPtr++;
+    }
+    int length = 25 - retPos;
+
+    int digitslen = 1;
+    digits[0] = 0;
+    for (int i = 0; i < length; i++) {
+        uint32_t carry = addPtr[i];
+        for (int j = 0; j < digitslen; j++) {
+            carry += (uint32_t)(digits[j]) << 8;
+            digits[j] = (unsigned char)(carry % 58);
+            carry /= 58;
+        }
+        while (carry > 0) {
+            digits[digitslen++] = (unsigned char)(carry % 58);
+            carry /= 58;
+        }
+    }
+
+    for (int i = 0; i < digitslen; i++)
+        b58Add[retPos++] = pszBase58[digits[digitslen - 1 - i]];
+
+    b58Add[retPos] = 0;
+}
+
+__device__ __noinline__ bool _MatchPrefix(const char *addr, const char *pattern, int patLen) {
+    for (int i = 0; i < patLen; i++) {
+        if (addr[i] != pattern[i]) return false;
+    }
+    return true;
+}
+
+__device__ bool CheckVanityPatternsK4(uint32_t *h, int *matched_idx, char *gen_addr) {
+    _GetAddress(P2PKH, h, gen_addr);
+    for (int i = 0; i < d_num_patterns; i++) {
+        if (_MatchPrefix(gen_addr, d_patterns[i], d_pattern_lens[i])) {
+            *matched_idx = i;
+            return true;
+        }
+    }
+    *matched_idx = -1;
+    return false;
+}
+
+__device__ void OutputMatchK4(uint32_t* out, uint32_t tid, int32_t incr, uint32_t* h, int pattern_idx, uint8_t isOdd) {
+    uint32_t pos = atomicAdd(out, 1);
+    if (pos < MAX_FOUND) {
+        uint32_t* entry = out + 1 + pos * 8;
+        entry[0] = tid;          // Thread ID for key reconstruction
+        entry[1] = (uint32_t)incr;
+        entry[2] = (pattern_idx << 8) | isOdd;
+        entry[3] = h[0];
+        entry[4] = h[1];
+        entry[5] = h[2];
+        entry[6] = h[3];
+        entry[7] = h[4];
+    }
+}
+
+__device__ __noinline__ void CheckHashCompSymK4(
+    uint64_t* px, uint32_t tid, int32_t incr,
+    uint32_t maxFound, uint32_t* out
+) {
+    uint32_t h1[5], h2[5];
+    char addr[40];
+    int matched_idx;
+
+    _GetHash160CompSym(px, (uint8_t*)h1, (uint8_t*)h2);
+
+    if (CheckVanityPatternsK4(h1, &matched_idx, addr)) {
+        OutputMatchK4(out, tid, incr, h1, matched_idx, 0);
+    }
+
+    if (CheckVanityPatternsK4(h2, &matched_idx, addr)) {
+        OutputMatchK4(out, tid, -incr, h2, matched_idx, 1);
+    }
+}
+
+__device__ void ComputeKeysK4(
+    uint32_t mode, uint64_t* startx, uint64_t* starty,
+    uint32_t maxFound, uint32_t* out
+) {
+    uint64_t dx[GRP_SIZE/2+1][4];
+    uint64_t px[4], py[4], pyn[4], sx[4], sy[4], dy[4], _s[4], _p2[4];
+
+    uint32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    __syncthreads();
+    Load256A(sx, startx);
+    Load256A(sy, starty);
+    Load256(px, sx);
+    Load256(py, sy);
+
+    for (uint32_t j = 0; j < STEP_SIZE / GRP_SIZE; j++) {
+        uint32_t i;
+        for (i = 0; i < HSIZE; i++)
+            ModSub256(dx[i], Gx[i], sx);
+        ModSub256(dx[i], Gx[i], sx);
+        ModSub256(dx[i+1], _2Gnx, sx);
+
+        _ModInvGrouped(dx);
+
+        CheckHashCompSymK4(px, tid, j*GRP_SIZE + GRP_SIZE/2, maxFound, out);
+
+        ModNeg256(pyn, py);
+
+        for (i = 0; i < HSIZE; i++) {
+            Load256(px, sx);
+            Load256(py, sy);
+            ModSub256(dy, Gy[i], py);
+            _ModMult(_s, dy, dx[i]);
+            _ModSqr(_p2, _s);
+            ModSub256(px, _p2, px);
+            ModSub256(px, Gx[i]);
+            ModSub256(py, Gx[i], px);
+            _ModMult(py, _s);
+            ModSub256(py, Gy[i]);
+
+            CheckHashCompSymK4(px, tid, j*GRP_SIZE + GRP_SIZE/2 + (i+1), maxFound, out);
+
+            Load256(px, sx);
+            ModSub256(dy, pyn, Gy[i]);
+            _ModMult(_s, dy, dx[i]);
+            _ModSqr(_p2, _s);
+            ModSub256(px, _p2, px);
+            ModSub256(px, Gx[i]);
+            ModSub256(py, Gx[i], px);
+            _ModMult(py, _s);
+            ModSub256(py, Gy[i]);
+            ModNeg256(py, py);
+
+            CheckHashCompSymK4(px, tid, j*GRP_SIZE + GRP_SIZE/2 - (i+1), maxFound, out);
+        }
+
+        Load256(px, sx);
+        Load256(py, sy);
+        ModNeg256(dy, Gy[i]);
+        ModSub256(dy, py);
+        _ModMult(_s, dy, dx[i]);
+        _ModSqr(_p2, _s);
+        ModSub256(px, _p2, px);
+        ModSub256(px, Gx[i]);
+        ModSub256(py, Gx[i], px);
+        _ModMult(py, _s);
+        ModSub256(py, Gy[i]);
+        ModNeg256(py, py);
+        CheckHashCompSymK4(px, tid, j*GRP_SIZE, maxFound, out);
+
+        i++;
+        Load256(px, sx);
+        Load256(py, sy);
+        ModSub256(dy, _2Gny, py);
+        _ModMult(_s, dy, dx[i]);
+        _ModSqr(_p2, _s);
+        ModSub256(px, _p2, px);
+        ModSub256(px, _2Gnx);
+        ModSub256(py, _2Gnx, px);
+        _ModMult(py, _s);
+        ModSub256(py, _2Gny);
+    }
+
+    __syncthreads();
+    Store256A(startx, px);
+    Store256A(starty, py);
+}
+
+__global__ void searchK4_kernel(
+    uint32_t mode, uint64_t* keys,
+    uint32_t maxFound, uint32_t* found
+) {
+    int xPtr = (blockIdx.x * blockDim.x) * 8;
+    int yPtr = xPtr + 4 * NB_THREAD_PER_GROUP;
+    ComputeKeysK4(mode, keys + xPtr, keys + yPtr, maxFound, found);
+}
+
+// =====================================================================================
+// HOST UTILITY FUNCTIONS
+// =====================================================================================
+
+void secure_random(void* buf, size_t len) {
+    FILE* f = fopen("/dev/urandom", "rb");
+    if (f) { fread(buf, 1, len, f); fclose(f); }
+}
+
+// State file format for sequential mode:
+// [8 bytes: total keys] [32 bytes: base key] [keys data...]
+void save_state_seq(const char* f, uint64_t* k, int n, uint64_t t, const uint64_t* baseKey) {
+    FILE* fp = fopen(f, "wb");
+    if (fp) {
+        fwrite(&t, 8, 1, fp);
+        fwrite(baseKey, 8, 4, fp);  // Save base key
+        fwrite(k, 8, n*8, fp);
+        fclose(fp);
+    }
+}
+
+uint64_t load_state_seq(const char* f, uint64_t* k, int n, uint64_t* baseKey) {
+    struct stat st;
+    if (stat(f, &st)) return 0;
+    FILE* fp = fopen(f, "rb");
+    if (!fp) return 0;
+    uint64_t t = 0;
+    if (fread(&t, 8, 1, fp) != 1) { fclose(fp); return 0; }
+    if (fread(baseKey, 8, 4, fp) != 4) { fclose(fp); return 0; }
+    if (fread(k, 8, n*8, fp) != (size_t)(n*8)) { fclose(fp); return 0; }
+    fclose(fp);
+    return t;
+}
+
+// Legacy state format (random mode)
+void save_state(const char* f, uint64_t* k, int n, uint64_t t) {
+    FILE* fp = fopen(f, "wb");
+    if (fp) { fwrite(&t, 8, 1, fp); fwrite(k, 8, n*8, fp); fclose(fp); }
+}
+
+uint64_t load_state(const char* f, uint64_t* k, int n) {
+    struct stat st;
+    if (stat(f, &st)) return 0;
+    FILE* fp = fopen(f, "rb");
+    if (!fp) return 0;
+    uint64_t t = 0;
+    if (fread(&t, 8, 1, fp) != 1) { fclose(fp); return 0; }
+    if (fread(k, 8, n*8, fp) != (size_t)(n*8)) { fclose(fp); return 0; }
+    fclose(fp);
+    return t;
+}
+
+// Initialize keys sequentially from a starting point
+// Optimized: compute baseKey*G once, then add G repeatedly for sequential keys
+void init_keys_from_start(uint64_t* h_keys, int nbThread, const char* startStr, bool isHex) {
+    printf("Initializing %d sequential keys...\n", nbThread);
+
+    // Parse the starting point
+    if (isHex) {
+        hex_to_256bit(startStr, g_baseKey);
+    } else {
+        decimal_to_256bit(startStr, g_baseKey);
+    }
+
+    char hexStr[65];
+    format_256bit_hex(g_baseKey, hexStr);
+    printf("  Start: 0x%s\n", hexStr);
+
+    // Compute baseKey * G (one expensive operation)
+    uint64_t base_px[4], base_py[4];
+    printf("  Computing base point (this may take a moment)...\n");
+    scalar_mult_G(base_px, base_py, g_baseKey);
+    printf("  Base point computed.\n");
+
+    // Current point starts at baseKey * G
+    uint64_t curr_px[4], curr_py[4];
+    memcpy(curr_px, base_px, 32);
+    memcpy(curr_py, base_py, 32);
+
+    // Generator point G for adding
+    uint64_t gx[4], gy[4];
+    memcpy(gx, SECP_GX, 32);
+    memcpy(gy, SECP_GY, 32);
+
+    // Generate EC points for each thread: baseKey*G + t*G
+    for (int t = 0; t < nbThread; t++) {
+        // Store current point
+        int block = t / NB_THREAD_PER_GROUP;
+        int tidInBlock = t % NB_THREAD_PER_GROUP;
+        int xBase = block * NB_THREAD_PER_GROUP * 8 + tidInBlock * 4;
+        int yBase = xBase + 4 * NB_THREAD_PER_GROUP;
+
+        h_keys[xBase + 0] = curr_px[0];
+        h_keys[xBase + 1] = curr_px[1];
+        h_keys[xBase + 2] = curr_px[2];
+        h_keys[xBase + 3] = curr_px[3];
+        h_keys[yBase + 0] = curr_py[0];
+        h_keys[yBase + 1] = curr_py[1];
+        h_keys[yBase + 2] = curr_py[2];
+        h_keys[yBase + 3] = curr_py[3];
+
+        // Add G to get next point (for next iteration)
+        if (t < nbThread - 1) {
+            uint64_t next_px[4], next_py[4];
+            point_add(next_px, next_py, curr_px, curr_py, gx, gy);
+            memcpy(curr_px, next_px, 32);
+            memcpy(curr_py, next_py, 32);
+        }
+
+        if ((t + 1) % 10000 == 0 || t == nbThread - 1) {
+            printf("\r  Generated %d/%d keys...", t + 1, nbThread);
+            fflush(stdout);
+        }
+    }
+    printf("\n  Done! Range: [start] to [start + %d]\n", nbThread - 1);
+    g_sequentialMode = true;
+    g_nbThread = nbThread;
+}
+
+// Reconstruct private key from match info
+void reconstruct_privkey(uint64_t* privkey, uint32_t tid, int32_t incr, uint64_t iter) {
+    // privkey = baseKey + tid + (iter * nbThread * STEP_SIZE) + incr
+    uint64_t offset[4] = {0, 0, 0, 0};
+
+    // Add tid
+    add256_scalar(offset, g_baseKey, (uint64_t)tid);
+
+    // Add iteration offset: iter * nbThread * STEP_SIZE
+    uint64_t iterOffset = iter * (uint64_t)g_nbThread * STEP_SIZE;
+    add256_scalar(offset, offset, iterOffset);
+
+    // Add incr (can be negative for odd parity)
+    if (incr >= 0) {
+        add256_scalar(privkey, offset, (uint64_t)incr);
+    } else {
+        // Handle negative incr by subtracting
+        uint64_t negIncr = (uint64_t)(-incr);
+        uint64_t tmp[4] = {negIncr, 0, 0, 0};
+        sub256(privkey, offset, tmp);
+    }
+}
+
+// Base58 encoding for WIF
+static const char b58_alphabet[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+void privkey_to_wif(const uint64_t* key, char* wif, bool compressed) {
+    uint8_t data[38];
+    data[0] = 0x80;  // Mainnet prefix
+
+    // Copy key bytes (big-endian)
+    for (int i = 0; i < 32; i++) {
+        data[1 + i] = ((uint8_t*)key)[31 - i];
+    }
+
+    int dataLen = 33;
+    if (compressed) {
+        data[33] = 0x01;  // Compression flag
+        dataLen = 34;
+    }
+
+    // Simple checksum (in production, use proper SHA256)
+    uint32_t chksum = 0;
+    for (int i = 0; i < dataLen; i++) chksum = chksum * 31 + data[i];
+    data[dataLen] = (chksum >> 24) & 0xFF;
+    data[dataLen+1] = (chksum >> 16) & 0xFF;
+    data[dataLen+2] = (chksum >> 8) & 0xFF;
+    data[dataLen+3] = chksum & 0xFF;
+    dataLen += 4;
+
+    // Base58 encode
+    int zeros = 0;
+    while (zeros < dataLen && data[zeros] == 0) zeros++;
+
+    uint8_t temp[64];
+    int tempLen = 0;
+
+    for (int i = 0; i < dataLen; i++) {
+        int carry = data[i];
+        for (int j = 0; j < tempLen; j++) {
+            carry += 256 * temp[j];
+            temp[j] = carry % 58;
+            carry /= 58;
+        }
+        while (carry > 0) {
+            temp[tempLen++] = carry % 58;
+            carry /= 58;
+        }
+    }
+
+    int idx = 0;
+    for (int i = 0; i < zeros; i++) wif[idx++] = '1';
+    for (int i = tempLen - 1; i >= 0; i--) wif[idx++] = b58_alphabet[temp[i]];
+    wif[idx] = '\0';
+}
+
+// Host-side hash160 to address
+void hash160_to_address_host(const uint8_t* hash160, char* addr) {
+    uint8_t data[25];
+    data[0] = 0x00;
+    memcpy(data + 1, hash160, 20);
+
+    uint32_t chksum = 0;
+    for (int i = 0; i < 21; i++) chksum = chksum * 31 + data[i];
+    data[21] = (chksum >> 24) & 0xFF;
+    data[22] = (chksum >> 16) & 0xFF;
+    data[23] = (chksum >> 8) & 0xFF;
+    data[24] = chksum & 0xFF;
+
+    int zeros = 0;
+    while (zeros < 25 && data[zeros] == 0) zeros++;
+
+    uint8_t temp[35];
+    int tempLen = 0;
+
+    for (int i = 0; i < 25; i++) {
+        int carry = data[i];
+        for (int j = 0; j < tempLen; j++) {
+            carry += 256 * temp[j];
+            temp[j] = carry % 58;
+            carry /= 58;
+        }
+        while (carry > 0) {
+            temp[tempLen++] = carry % 58;
+            carry /= 58;
+        }
+    }
+
+    int idx = 0;
+    for (int i = 0; i < zeros; i++) addr[idx++] = '1';
+    for (int i = tempLen - 1; i >= 0; i--) addr[idx++] = b58_alphabet[temp[i]];
+    addr[idx] = '\0';
+}
+
+// Load patterns
+int load_patterns(const char* filename, char patterns[][36], int* lens, int max_patterns) {
+    FILE* f = fopen(filename, "r");
+    if (!f) {
+        printf("Error: Cannot open patterns file: %s\n", filename);
+        return 0;
+    }
+
+    int count = 0;
+    char line[256];
+
+    while (fgets(line, sizeof(line), f) && count < max_patterns) {
+        int len = strlen(line);
+        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) {
+            line[--len] = '\0';
+        }
+
+        if (len == 0 || line[0] == '#') continue;
+        if (line[0] != '1') {
+            printf("Warning: Skipping pattern (must start with '1'): %s\n", line);
+            continue;
+        }
+
+        bool valid = true;
+        for (int i = 0; i < len && valid; i++) {
+            if (strchr("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz", line[i]) == NULL) {
+                printf("Warning: Invalid Base58 char in: %s\n", line);
+                valid = false;
+            }
+        }
+        if (!valid) continue;
+
+        strncpy(patterns[count], line, 35);
+        patterns[count][35] = '\0';
+        lens[count] = len;
+
+        printf("Pattern %d: %s (len=%d)\n", count, patterns[count], lens[count]);
+        count++;
+    }
+
+    fclose(f);
+    return count;
+}
+
+void print_usage(const char* prog) {
+    printf("SearchK4 - GPU Vanity Address Search with Sequential Keyspace\n\n");
+    printf("Usage: %s -patterns <file> [options]\n\n", prog);
+    printf("Required:\n");
+    printf("  -patterns <file>   File with vanity prefixes (one per line)\n\n");
+    printf("Optional:\n");
+    printf("  -gpu <id>          GPU device ID (default: 0)\n");
+    printf("  -start <value>     Starting private key (decimal)\n");
+    printf("  -startx <value>    Starting private key (hex, with or without 0x)\n");
+    printf("  -state <file>      State file for resume\n");
+    printf("  -o <file>          Output file (default: found_k4.txt)\n");
+    printf("  -h, --help         Show this help\n\n");
+    printf("Examples:\n");
+    printf("  # Random search (original behavior):\n");
+    printf("  %s -patterns patterns.txt -gpu 0\n\n", prog);
+    printf("  # Sequential search from decimal start:\n");
+    printf("  %s -patterns patterns.txt -start 12345678901234567890\n\n", prog);
+    printf("  # Sequential search from hex start:\n");
+    printf("  %s -patterns patterns.txt -startx 0x8000000000000000\n\n", prog);
+    printf("  # Resume from state file:\n");
+    printf("  %s -patterns patterns.txt -state gpu0.state\n\n", prog);
+}
+
+int main(int argc, char** argv) {
+    char* patternsFile = NULL;
+    char* stateFile = NULL;
+    char* outputFile = (char*)"found_k4.txt";
+    char* startDecimal = NULL;
+    char* startHex = NULL;
+    int gpuId = 0;
+
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-patterns") && i+1 < argc) patternsFile = argv[++i];
+        else if (!strcmp(argv[i], "-gpu") && i+1 < argc) gpuId = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-state") && i+1 < argc) stateFile = argv[++i];
+        else if (!strcmp(argv[i], "-o") && i+1 < argc) outputFile = argv[++i];
+        else if (!strcmp(argv[i], "-start") && i+1 < argc) startDecimal = argv[++i];
+        else if (!strcmp(argv[i], "-startx") && i+1 < argc) startHex = argv[++i];
+        else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
+            print_usage(argv[0]);
+            return 0;
+        }
+    }
+
+    if (!patternsFile) {
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    // Load patterns
+    char h_patterns[K4_MAX_PATTERNS][36];
+    int h_lens[K4_MAX_PATTERNS];
+    int numPatterns = load_patterns(patternsFile, h_patterns, h_lens, K4_MAX_PATTERNS);
+    if (numPatterns == 0) {
+        printf("Error: No valid patterns loaded\n");
+        return 1;
+    }
+    printf("Loaded %d patterns\n\n", numPatterns);
+
+    char defaultState[256];
+    if (!stateFile) {
+        snprintf(defaultState, 256, "gpu%d.state", gpuId);
+        stateFile = defaultState;
+    }
+
+    signal(SIGINT, sighandler);
+    signal(SIGTERM, sighandler);
+    cudaSetDevice(gpuId);
+
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, gpuId);
+    printf("GPU %d: %s (SM %d.%d, %d MPs)\n", gpuId, prop.name, prop.major, prop.minor, prop.multiProcessorCount);
+
+    // Copy patterns to GPU constant memory
+    cudaMemcpyToSymbol(d_patterns, h_patterns, sizeof(h_patterns));
+    cudaMemcpyToSymbol(d_pattern_lens, h_lens, sizeof(h_lens));
+    cudaMemcpyToSymbol(d_num_patterns, &numPatterns, sizeof(int));
+
+    int nbThread = 65536;
+    g_nbThread = nbThread;
+    uint64_t* d_keys;
+    uint32_t* d_found;
+
+    cudaMalloc(&d_keys, nbThread * 64);
+    cudaMalloc(&d_found, (1 + MAX_FOUND * 8) * 4);
+
+    uint64_t* h_keys = (uint64_t*)malloc(nbThread * 64);
+    uint64_t resumedKeys = 0;
+
+    // Initialize keys based on mode
+    if (startDecimal || startHex) {
+        // Sequential mode from command line
+        if (startHex) {
+            init_keys_from_start(h_keys, nbThread, startHex, true);
+        } else {
+            init_keys_from_start(h_keys, nbThread, startDecimal, false);
+        }
+    } else {
+        // Try to load state file
+        uint64_t loadedBase[4] = {0};
+        resumedKeys = load_state_seq(stateFile, h_keys, nbThread, loadedBase);
+
+        if (resumedKeys > 0 && (loadedBase[0] | loadedBase[1] | loadedBase[2] | loadedBase[3]) != 0) {
+            // Resumed sequential mode
+            memcpy(g_baseKey, loadedBase, sizeof(g_baseKey));
+            g_sequentialMode = true;
+            char hexStr[65];
+            format_256bit_hex(g_baseKey, hexStr);
+            printf("Resumed SEQUENTIAL from %.2fB keys\n", resumedKeys/1e9);
+            printf("  Base key: 0x%s\n", hexStr);
+        } else if (resumedKeys > 0) {
+            // Resumed random mode (legacy state)
+            printf("Resumed RANDOM from %.2fB keys\n", resumedKeys/1e9);
+            g_sequentialMode = false;
+        } else {
+            // Fresh random start
+            printf("Fresh start with RANDOM keys\n");
+            secure_random(h_keys, nbThread * 64);
+            g_sequentialMode = false;
+        }
+    }
+
+    cudaMemcpy(d_keys, h_keys, nbThread * 64, cudaMemcpyHostToDevice);
+
+    uint32_t* h_found;
+    cudaMallocHost(&h_found, (1 + MAX_FOUND * 8) * 4);
+
+    printf("\nMode: %s\n", g_sequentialMode ? "SEQUENTIAL" : "RANDOM");
+    printf("Running: %d threads, %d patterns\n", nbThread, numPatterns);
+    printf("Output: %s\n\n", outputFile);
+
+    time_t start = time(NULL);
+    uint64_t total = resumedKeys, iter = 0;
+
+    while (running) {
+        cudaMemset(d_found, 0, 4);
+        searchK4_kernel<<<nbThread/NB_THREAD_PER_GROUP, NB_THREAD_PER_GROUP>>>(
+            0, d_keys, MAX_FOUND, d_found);
+        cudaDeviceSynchronize();
+
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            printf("\nCUDA Error: %s\n", cudaGetErrorString(err));
+            break;
+        }
+
+        cudaMemcpy(h_found, d_found, 4, cudaMemcpyDeviceToHost);
+        if (h_found[0] > 0) {
+            uint32_t nFound = h_found[0];
+            if (nFound > MAX_FOUND) nFound = MAX_FOUND;
+
+            cudaMemcpy(h_found, d_found, (1 + nFound * 8) * 4, cudaMemcpyDeviceToHost);
+
+            FILE* mf = fopen(outputFile, "a");
+            time_t now = time(NULL);
+            char* timestr = ctime(&now);
+            timestr[strlen(timestr)-1] = '\0';
+
+            printf("\n[!] Found %u matches!\n", nFound);
+
+            for (uint32_t i = 0; i < nFound; i++) {
+                uint32_t* entry = h_found + 1 + i*8;
+                uint32_t tid = entry[0];
+                int32_t incr = (int32_t)entry[1];
+                int pattern_idx = (entry[2] >> 8) & 0xFF;
+                uint8_t isOdd = entry[2] & 0xFF;
+                uint32_t* hash = entry + 3;
+
+                uint8_t hash160[20];
+                for (int w = 0; w < 5; w++) {
+                    uint32_t v = hash[w];
+                    hash160[w*4 + 0] = (v >> 0) & 0xFF;
+                    hash160[w*4 + 1] = (v >> 8) & 0xFF;
+                    hash160[w*4 + 2] = (v >> 16) & 0xFF;
+                    hash160[w*4 + 3] = (v >> 24) & 0xFF;
+                }
+
+                char addr[40];
+                hash160_to_address_host(hash160, addr);
+
+                const char* pattern = (pattern_idx >= 0 && pattern_idx < numPatterns) ?
+                                       h_patterns[pattern_idx] : "?";
+
+                if (g_sequentialMode) {
+                    // Reconstruct and display private key
+                    uint64_t privkey[4];
+                    reconstruct_privkey(privkey, tid, incr, iter);
+
+                    char hexKey[65], wifKey[60];
+                    format_256bit_hex(privkey, hexKey);
+                    privkey_to_wif(privkey, wifKey, true);
+
+                    fprintf(mf, "[%s] Pattern='%s' Address=%s\n", timestr, pattern, addr);
+                    fprintf(mf, "  PrivKey (HEX): 0x%s\n", hexKey);
+                    fprintf(mf, "  PrivKey (WIF): %s\n", wifKey);
+                    fprintf(mf, "  Hash160: ");
+                    for (int b = 0; b < 20; b++) fprintf(mf, "%02x", hash160[b]);
+                    fprintf(mf, "\n  tid=%u incr=%d parity=%d iter=%lu\n\n", tid, incr, isOdd, iter);
+
+                    printf("  %s -> Pattern: %s\n", addr, pattern);
+                    printf("    PrivKey: 0x%s\n", hexKey);
+                } else {
+                    fprintf(mf, "[%s] Pattern='%s' Address=%s Hash160=", timestr, pattern, addr);
+                    for (int b = 0; b < 20; b++) fprintf(mf, "%02x", hash160[b]);
+                    fprintf(mf, " tid=%u incr=%d parity=%d\n", tid, incr, isOdd);
+
+                    printf("  %s -> Pattern: %s\n", addr, pattern);
+                }
+            }
+            fclose(mf);
+        }
+
+        total += (uint64_t)nbThread * STEP_SIZE * 2;
+        iter++;
+
+        if (iter % 500 == 0) {
+            cudaMemcpy(h_keys, d_keys, nbThread * 64, cudaMemcpyDeviceToHost);
+            if (g_sequentialMode) {
+                save_state_seq(stateFile, h_keys, nbThread, total, g_baseKey);
+            } else {
+                save_state(stateFile, h_keys, nbThread, total);
+            }
+        }
+
+        if (iter % 50 == 0) {
+            double t = difftime(time(NULL), start);
+            if (t < 1) t = 1;
+            double session = total - resumedKeys;
+            double rate = session / t / 1e6;
+            printf("\r[%5.0fs] %.2fB keys | %.2f MKey/s | iter=%lu     ", t, total/1e9, rate, iter);
+            fflush(stdout);
+        }
+    }
+
+    printf("\n\nSaving state...\n");
+    cudaMemcpy(h_keys, d_keys, nbThread * 64, cudaMemcpyDeviceToHost);
+    if (g_sequentialMode) {
+        save_state_seq(stateFile, h_keys, nbThread, total, g_baseKey);
+    } else {
+        save_state(stateFile, h_keys, nbThread, total);
+    }
+    printf("Total: %.2fB keys\n", total/1e9);
+
+    cudaFree(d_keys);
+    cudaFree(d_found);
+    cudaFreeHost(h_found);
+    free(h_keys);
+
+    return 0;
+}
