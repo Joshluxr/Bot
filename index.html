@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SearchK4 - GPU Key Search Documentation</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --red: #f85149;
+            --yellow: #d29922;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 2rem;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #fff; font-size: 2rem; margin-bottom: 0.5rem; }
+        h2 { color: var(--accent); font-size: 1.5rem; margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+        h3 { color: #fff; font-size: 1.2rem; margin: 1.5rem 0 0.5rem; }
+        p { margin-bottom: 1rem; }
+        .subtitle { color: var(--text-muted); font-size: 1.1rem; margin-bottom: 2rem; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.2rem;
+            text-align: center;
+        }
+        .stat-value { font-size: 1.8rem; font-weight: bold; color: #fff; }
+        .stat-label { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.3rem; }
+        .stat-green .stat-value { color: var(--green); }
+        .stat-yellow .stat-value { color: var(--yellow); }
+        .stat-red .stat-value { color: var(--red); }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            background: var(--surface);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th { background: #1c2129; color: #fff; font-weight: 600; }
+        tr:last-child td { border-bottom: none; }
+        
+        code {
+            background: #1c2129;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            color: var(--accent);
+        }
+        pre {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.2rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-complete { background: #1b4332; color: var(--green); }
+        .badge-active { background: #3b2e00; color: var(--yellow); }
+        .badge-no-match { background: #3d1e20; color: var(--red); }
+
+        .section {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .file-list { list-style: none; }
+        .file-list li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .file-list li:last-child { border-bottom: none; }
+        .file-list a { color: var(--accent); text-decoration: none; }
+        .file-list a:hover { text-decoration: underline; }
+        .file-desc { color: var(--text-muted); font-size: 0.85rem; margin-left: 0.5rem; }
+
+        .warning {
+            background: #3b2e00;
+            border: 1px solid #6e5000;
+            border-radius: 8px;
+            padding: 1rem 1.2rem;
+            margin: 1rem 0;
+        }
+        .warning::before { content: "⚠️ "; }
+
+        .nav {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+        .nav a { color: var(--accent); text-decoration: none; }
+        .nav a:hover { text-decoration: underline; }
+
+        @media (max-width: 600px) {
+            body { padding: 1rem; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .nav { flex-direction: column; gap: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SearchK4</h1>
+        <p class="subtitle">GPU-Accelerated secp256k1 Key Search — Documentation & Codebase</p>
+
+        <nav class="nav">
+            <a href="#overview">Overview</a>
+            <a href="#infrastructure">Infrastructure</a>
+            <a href="#scripts">Scripts</a>
+            <a href="#usage">Usage</a>
+            <a href="#ranges">Search History</a>
+            <a href="#troubleshooting">Troubleshooting</a>
+            <a href="#performance">Performance</a>
+        </nav>
+
+        <!-- Overview Stats -->
+        <div class="stats-grid">
+            <div class="stat-card stat-yellow">
+                <div class="stat-value">~40Q+</div>
+                <div class="stat-label">Total Keys Searched</div>
+            </div>
+            <div class="stat-card stat-red">
+                <div class="stat-value">0</div>
+                <div class="stat-label">Matches Found</div>
+            </div>
+            <div class="stat-card stat-green">
+                <div class="stat-value">13.2</div>
+                <div class="stat-label">GKey/s (Combined)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">8×5080</div>
+                <div class="stat-label">GPU Configuration</div>
+            </div>
+        </div>
+
+        <!-- Infrastructure -->
+        <h2 id="infrastructure">Infrastructure</h2>
+        <div class="section">
+            <table>
+                <tr><th>Component</th><th>Details</th></tr>
+                <tr><td>Platform</td><td>vast.ai (cloud GPU rental)</td></tr>
+                <tr><td>Server</td><td><code>ssh8.vast.ai:20911</code> (latest)</td></tr>
+                <tr><td>GPUs</td><td>8× NVIDIA RTX 5080</td></tr>
+                <tr><td>Cost</td><td>~$1.186/hr</td></tr>
+                <tr><td>Per-GPU Speed</td><td>~1.59–1.77 GKey/s</td></tr>
+                <tr><td>Combined Speed</td><td>~13.2 GKey/s</td></tr>
+                <tr><td>Binary</td><td><code>searchk4_fast</code></td></tr>
+                <tr><td>Patterns</td><td><code>combined_patterns.txt</code> (3,493 addresses)</td></tr>
+                <tr><td>Work Directory</td><td><code>/root/searchk4_hybrid/SearchK4_optimized/</code></td></tr>
+            </table>
+        </div>
+
+        <!-- Scripts -->
+        <h2 id="scripts">Scripts & Files</h2>
+        <div class="section">
+            <ul class="file-list">
+                <li><a href="scripts/launch_range7.sh">launch_range7.sh</a> <span class="file-desc">— Launch all 8 GPUs on Range 7 (10Q keys)</span></li>
+                <li><a href="scripts/launch_range6.sh">launch_range6.sh</a> <span class="file-desc">— Launch all 8 GPUs on Range 6 (500T keys, completed)</span></li>
+                <li><a href="scripts/resume_range7.sh">resume_range7.sh</a> <span class="file-desc">— Resume from state files after crash</span></li>
+                <li><a href="scripts/hourly_progress.sh">hourly_progress.sh</a> <span class="file-desc">— Hourly progress logger (background daemon)</span></li>
+                <li><a href="scripts/check_status.sh">check_status.sh</a> <span class="file-desc">— Quick status & match check</span></li>
+                <li><a href="scripts/launch_template.sh">launch_template.sh</a> <span class="file-desc">— Template for new ranges</span></li>
+                <li><a href="scripts/range_splitter.py">range_splitter.py</a> <span class="file-desc">— Python tool to split decimal ranges into hex GPU sub-ranges</span></li>
+            </ul>
+        </div>
+
+        <!-- Usage -->
+        <h2 id="usage">Usage Guide</h2>
+
+        <h3>Starting a New Range</h3>
+        <div class="section">
+            <ol style="padding-left: 1.5rem;">
+                <li>Use <code>range_splitter.py</code> to convert and split the decimal range:
+                    <pre><code>python3 range_splitter.py START_DECIMAL END_DECIMAL</code></pre>
+                </li>
+                <li>Copy the hex arrays into a new launch script (use <code>launch_template.sh</code>)</li>
+                <li>Deploy to server: <code>scp -P PORT launch_script.sh root@SERVER:/root/searchk4_hybrid/SearchK4_optimized/</code></li>
+                <li>Run: <code>bash launch_script.sh</code></li>
+                <li>Start hourly logger: <code>nohup bash hourly_progress.sh &</code></li>
+            </ol>
+        </div>
+
+        <h3>SearchK4 Binary Flags</h3>
+        <div class="warning">Use SINGLE DASH flags only. Double-dash (--gpu) will fail.</div>
+        <div class="section">
+            <table>
+                <tr><th>Flag</th><th>Description</th></tr>
+                <tr><td><code>-patterns</code></td><td>Path to hash160 patterns file</td></tr>
+                <tr><td><code>-direct</code></td><td>Direct key iteration mode</td></tr>
+                <tr><td><code>-startx</code></td><td>Start hex range (0x-prefixed)</td></tr>
+                <tr><td><code>-endx</code></td><td>End hex range (0x-prefixed)</td></tr>
+                <tr><td><code>-gpu</code></td><td>GPU index (0-7)</td></tr>
+                <tr><td><code>-o</code></td><td>Output file for matches</td></tr>
+                <tr><td><code>-state</code></td><td>State file for checkpointing</td></tr>
+            </table>
+        </div>
+
+        <h3>Resuming After Crash</h3>
+        <pre><code>for i in {0..7}; do
+  nohup ./searchk4_fast \
+    -patterns combined_patterns.txt \
+    -direct \
+    -state gpu${i}_r7.state \
+    -endx ${END_HEX[$i]} \
+    -gpu $i \
+    -o gpu${i}_r7_found.txt \
+    > gpu${i}_r7.log 2>&1 &
+done</code></pre>
+
+        <h3>Checking for Matches</h3>
+        <pre><code># Any non-empty found file = MATCH
+for i in {0..7}; do
+  [ -s gpu${i}_r7_found.txt ] && echo "MATCH on GPU $i!" && cat gpu${i}_r7_found.txt || echo "GPU $i: no match"
+done</code></pre>
+
+        <!-- Search History -->
+        <h2 id="ranges">Search History</h2>
+        <table>
+            <tr>
+                <th>Range</th>
+                <th>Keys</th>
+                <th>Duration</th>
+                <th>Status</th>
+                <th>Result</th>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>—</td>
+                <td>—</td>
+                <td><span class="badge badge-complete">COMPLETE</span></td>
+                <td><span class="badge badge-no-match">NO MATCH</span></td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>~19.5 quadrillion</td>
+                <td>~14 days</td>
+                <td><span class="badge badge-complete">STOPPED</span></td>
+                <td><span class="badge badge-no-match">NO MATCH</span></td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>500 trillion (100%)</td>
+                <td>~10 hours</td>
+                <td><span class="badge badge-complete">EXHAUSTED</span></td>
+                <td><span class="badge badge-no-match">NO MATCH</span></td>
+            </tr>
+            <tr>
+                <td>7</td>
+                <td>~9.21 quadrillion (92.1%)</td>
+                <td>~8+ days</td>
+                <td><span class="badge badge-active">LAST ACTIVE</span></td>
+                <td><span class="badge badge-no-match">NO MATCH</span></td>
+            </tr>
+        </table>
+
+        <h3>Range 7 Details</h3>
+        <div class="section">
+            <p><strong>From:</strong> <code>82,988,190,356,384,517,260,073,324,955,726,623,558,128,682,318,812,983,971,013,110,423,526,066,342,990</code></p>
+            <p><strong>To:</strong> <code>82,988,190,356,384,517,260,073,324,955,726,623,558,128,682,318,812,983,971,013,120,423,526,066,342,990</code></p>
+            <p><strong>Total:</strong> 10,000,000,000,000,000 keys (10 quadrillion), 1.25 quadrillion per GPU</p>
+            <table>
+                <tr><th>GPU</th><th>Keys Checked (B)</th><th>Speed (GKey/s)</th></tr>
+                <tr><td>0</td><td>1,163,976</td><td>1.66</td></tr>
+                <tr><td>1</td><td>1,122,349</td><td>1.61</td></tr>
+                <tr><td>2</td><td>1,137,448</td><td>1.65</td></tr>
+                <tr><td>3</td><td>1,150,528</td><td>1.65</td></tr>
+                <tr><td>4</td><td>1,145,991</td><td>1.65</td></tr>
+                <tr><td>5</td><td>1,161,661</td><td>1.66</td></tr>
+                <tr><td>6</td><td>1,170,358</td><td>1.68</td></tr>
+                <tr><td>7</td><td>1,162,346</td><td>1.66</td></tr>
+            </table>
+        </div>
+
+        <!-- Troubleshooting -->
+        <h2 id="troubleshooting">Troubleshooting</h2>
+        <div class="section">
+            <h3>Permission denied (publickey)</h3>
+            <p>Server lost SSH key. Re-add via vast.ai dashboard:</p>
+            <pre><code>ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICYREBDG0rvl18yJCB3IzLzyaQdQB6UvswpXWsyJuCE1 devin@cognition.ai</code></pre>
+
+            <h3>Processes died (0% GPU utilization)</h3>
+            <ol style="padding-left: 1.5rem;">
+                <li>Verify state files: <code>ls -la gpu*_r7.state</code> (should be ~40MB each)</li>
+                <li>Run <code>resume_range7.sh</code></li>
+                <li>Verify: <code>nvidia-smi</code> should show 100% within 15 seconds</li>
+            </ol>
+
+            <h3>Connection refused</h3>
+            <p>Server down or port changed. Check vast.ai dashboard for current SSH connection details. Server address and port may change after restarts.</p>
+
+            <h3>"Unknown or incomplete option"</h3>
+            <p>Used double-dash flags. Change <code>--gpu</code> to <code>-gpu</code>, <code>--patterns</code> to <code>-patterns</code>, etc.</p>
+        </div>
+
+        <!-- Performance -->
+        <h2 id="performance">Performance & Cost Analysis</h2>
+        <div class="section">
+            <table>
+                <tr><th>GPU</th><th>CUDA Cores</th><th>GKey/s</th><th>$/hr (vast.ai)</th><th>$/GKey/s/hr</th></tr>
+                <tr><td>RTX 5080 ⭐</td><td>10,752</td><td>~1.65-1.77</td><td>~$0.148</td><td><strong>$0.085</strong></td></tr>
+                <tr><td>RTX 4060 Ti</td><td>4,352</td><td>~0.72</td><td>~$0.07</td><td>$0.097</td></tr>
+                <tr><td>RTX 5060 Ti</td><td>4,608</td><td>~0.76</td><td>—</td><td>—</td></tr>
+                <tr><td>B300 SXM6 (est.)</td><td>36,864</td><td>~6.1</td><td>~$0.63</td><td>~$0.10</td></tr>
+            </table>
+            <p style="margin-top: 1rem;"><strong>Conclusion:</strong> RTX 5080 provides the best cost efficiency for secp256k1 key iteration workloads at ~$0.085/GKey/s/hr.</p>
+            <p><strong>Scaling formula:</strong> ~0.165 GKey/s per 1,000 CUDA cores (approximate).</p>
+        </div>
+
+        <div style="margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem;">
+            <p>SearchK4 GPU Key Search Documentation — Last updated: April 2026</p>
+        </div>
+    </div>
+</body>
+</html>
