@@ -1,0 +1,16 @@
+# Small dictionary for authorized assessment (common defaults / test accounts)
+admin
+password
+password123
+admin123
+wordpress
+test
+test123
+123456
+changeme
+letmein
+welcome
+P@ssw0rd
+Password1
+tyke-test-admin
+scweb

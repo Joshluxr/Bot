@@ -54,3 +54,19 @@ Ten consecutive `POST` attempts to `/wp%2Dlogin.php` returned **HTTP 200** with 
 3. Restrict `wp-login` by IP/VPN; require 2FA for administrators.  
 4. Remove or harden `tyke-test-admin`; disable public user listing in REST API.  
 5. Block encoded-path variants in WAF and at Apache (`mod_rewrite` canonicalization).
+
+## 5. Password dictionary testing — completed (small RoE wordlist)
+
+**Script:** `run_dictionary.sh` via `/wp%2Dlogin.php` (6s delay, cookie-aware curl)
+
+**Wordlist:** `wordlists/roe-dictionary-small.txt` (15 common passwords)
+
+| User | Result |
+|------|--------|
+| scweb | All probes → **Invalid Password** (account exists); no match |
+| pio_tyke | Same |
+| pio_jerome | Same |
+| tyke-test-admin | Same |
+| pio_rus | Same |
+
+**Conclusion:** All five accounts are live on the bypassed login endpoint. None of the tested common passwords succeeded. Credential stuffing at scale remains practical due to absent rate limiting (use client-approved larger wordlist from engagement jump host if RoE allows).
