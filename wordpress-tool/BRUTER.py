@@ -79,6 +79,12 @@ def create_session():
     session = requests.Session()
     session.verify = False
     session.trust_env = False
+    session.headers.update({
+        'User-Agent': (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        ),
+    })
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     return session
 
@@ -332,6 +338,17 @@ def advanced_wordpress_detection(url, session):
                 json_data = resp.json()
                 if isinstance(json_data, list):
                     wp_indicators.append('rest-api')
+            except:
+                pass
+
+        # Méthode 7b: REST user endpoint (works when login WAF blocks other paths)
+        users_url = url + '/wp-json/wp/v2/users'
+        resp = session.get(users_url, timeout=10, verify=False)
+        if resp.status_code == 200:
+            try:
+                json_data = resp.json()
+                if isinstance(json_data, list) and json_data:
+                    wp_indicators.append('rest-api-users')
             except:
                 pass
         

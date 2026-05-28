@@ -1,0 +1,226 @@
+{
+  "meta": {
+    "target": "https://sc.judiciary.gov.ph",
+    "timestamp": "2026-05-28T02:29:49.227711+00:00",
+    "mode": "offensive"
+  },
+  "waf_bypass_hits": [
+    {
+      "method": "GET",
+      "path": "/wp-login.php/..",
+      "status": 200
+    }
+  ],
+  "working_login_url": "https://sc.judiciary.gov.ph/wp-admin/admin-post.php",
+  "exploit_surface": [
+    {
+      "path": "/xmlrpc.php",
+      "status": 403,
+      "len": 919
+    },
+    {
+      "path": "/wp-cron.php",
+      "status": 200,
+      "len": 0,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/wp-config.php.bak",
+      "status": 403,
+      "len": 919
+    },
+    {
+      "path": "/wp-config.php~",
+      "status": 404,
+      "len": 344054
+    },
+    {
+      "path": "/.env",
+      "status": 403,
+      "len": 919
+    },
+    {
+      "path": "/backup.zip",
+      "status": 404,
+      "len": 344054
+    },
+    {
+      "path": "/wp-content/debug.log",
+      "status": 403,
+      "len": 919
+    },
+    {
+      "path": "/wp-content/uploads/",
+      "status": 403,
+      "len": 285
+    },
+    {
+      "path": "/wp-content/plugins/",
+      "status": 200,
+      "len": 0,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/wp-content/themes/",
+      "status": 200,
+      "len": 0,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/wp-json/wp/v2/users/me",
+      "status": 401,
+      "len": 96
+    },
+    {
+      "path": "/wp-json/jwt-auth/v1/token",
+      "status": 404,
+      "len": 114
+    },
+    {
+      "path": "/?rest_route=/wp/v2/users",
+      "status": 200,
+      "len": 3129,
+      "content_type": "application/json; charset=UTF-8",
+      "json_preview": "[{'id': 16, 'name': 'pio jerome', 'url': 'https://sc.judiciary.gov.ph/', 'description': '', 'link': 'https://sc.judiciary.gov.ph/author/pio_jerome/', 'slug': 'pio_jerome', 'avatar_urls': {'24': 'https"
+    },
+    {
+      "path": "/wp-json/oembed/1.0/embed",
+      "status": 400,
+      "len": 115
+    },
+    {
+      "path": "/wp-json/wp/v2/posts?per_page=1",
+      "status": 200,
+      "len": 15195,
+      "content_type": "application/json; charset=UTF-8",
+      "json_preview": "[{'id': 166814, 'date': '2026-05-28T10:14:51', 'date_gmt': '2026-05-28T02:14:51', 'guid': {'rendered': 'https://sc.judiciary.gov.ph/?p=166814'}, 'modified': '2026-05-28T10:23:04', 'modified_gmt': '202"
+    },
+    {
+      "path": "/wp-login.php?action=register",
+      "status": 403,
+      "len": 520
+    },
+    {
+      "path": "/wp-signup.php",
+      "status": 302,
+      "len": 0
+    },
+    {
+      "path": "/wp-content/plugins/akismet/readme.txt",
+      "status": 404,
+      "len": 347487
+    },
+    {
+      "path": "/wp-content/plugins/contact-form-7/readme.txt",
+      "status": 404,
+      "len": 347487
+    },
+    {
+      "path": "/wp-content/plugins/wordfence/readme.txt",
+      "status": 404,
+      "len": 347487
+    },
+    {
+      "path": "/wp-content/plugins/elementor/readme.txt",
+      "status": 200,
+      "len": 31090,
+      "content_type": "text/plain",
+      "plugin_version": "3.25.10"
+    },
+    {
+      "path": "/wp-content/plugins/yoast/readme.txt",
+      "status": 404,
+      "len": 347487
+    },
+    {
+      "path": "/wp-content/plugins/wp-file-manager/readme.txt",
+      "status": 404,
+      "len": 347487
+    },
+    {
+      "path": "/wp-content/plugins/revslider/readme.txt",
+      "status": 404,
+      "len": 347487
+    },
+    {
+      "path": "/wp-content/plugins/all-in-one-wp-migration/readme.txt",
+      "status": 404,
+      "len": 347487
+    },
+    {
+      "path": "/wp-includes/version.php",
+      "status": 200,
+      "len": 0,
+      "content_type": "text/html; charset=UTF-8"
+    },
+    {
+      "path": "/license.txt",
+      "status": 200,
+      "len": 19915,
+      "content_type": "text/plain"
+    },
+    {
+      "path": "/wp-trackback.php",
+      "status": 404,
+      "len": 135
+    },
+    {
+      "path": "/wp-json/wp/v2/settings",
+      "status": 401,
+      "len": 98
+    },
+    {
+      "path": "/wp-json/wp/v2/types",
+      "status": 200,
+      "len": 5250,
+      "content_type": "application/json; charset=UTF-8",
+      "json_preview": "{'post': {'description': '', 'hierarchical': False, 'has_archive': False, 'name': 'Posts', 'slug': 'post', 'icon': 'dashicons-admin-post', 'taxonomies': ['category', 'post_tag'], 'rest_base': 'posts',"
+    }
+  ],
+  "xmlrpc": [
+    {
+      "path": "/xmlrpc.php",
+      "headers": {},
+      "status": 403,
+      "body_snippet": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CON"
+    },
+    {
+      "path": "/xmlrpc.php",
+      "headers": {
+        "X-Original-URL": "/xmlrpc.php"
+      },
+      "status": 403,
+      "body_snippet": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CON"
+    },
+    {
+      "path": "/wp%2Dxmlrpc.php",
+      "headers": {},
+      "status": 403,
+      "body_snippet": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CON"
+    },
+    {
+      "path": "/xmlrpc.php",
+      "headers": {
+        "Content-Type": "text/xml"
+      },
+      "status": 403,
+      "body_snippet": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">\n<HTML><HEAD><META HTTP-EQUIV=\"Content-Type\" CON"
+    }
+  ],
+  "brute_force": {
+    "login_url": "https://sc.judiciary.gov.ph/wp-admin/admin-post.php",
+    "attempts": [],
+    "success": null,
+    "total_tested": 330
+  },
+  "password_reset": {
+    "lost_password_url": "https://sc.judiciary.gov.ph/wp%2Dlogin.php?action=lostpassword",
+    "results": {
+      "scweb": "blocked_403",
+      "pio_tyke": "blocked_403",
+      "pio_jerome": "blocked_403",
+      "tyke-test-admin": "blocked_403",
+      "pio_rus": "blocked_403"
+    }
+  }
+}
