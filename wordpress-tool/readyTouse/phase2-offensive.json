@@ -1,0 +1,347 @@
+{
+  "meta": {
+    "target": "https://sc.judiciary.gov.ph",
+    "phase": 2,
+    "timestamp": "2026-05-28T06:10:55.069685+00:00"
+  },
+  "wordpress_version": {
+    "generator_meta": "6.5.2",
+    "feed_version": "6.5.2"
+  },
+  "elementor_tests": [
+    {
+      "method": "GET",
+      "path": "/wp-json/elementor/v1/globals",
+      "status": 500,
+      "len": 2634,
+      "content_type": "text/html; charset=UTF-8",
+      "body_snippet": "<!DOCTYPE html>\n<html lang=\"en-US\">\n<head>\n\t<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n\t<meta name=\"viewport\" content=\"width=device-width\">\n\t\t<meta name='robots' content='ma"
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/elementor/v1/kit-elements-defaults",
+      "status": 401,
+      "len": 98,
+      "content_type": "application/json; charset=UTF-8",
+      "body_snippet": "{\"code\":\"rest_forbidden\",\"message\":\"Sorry, you are not allowed to do that.\",\"data\":{\"status\":401}}"
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/elementor/v1/site-navigation",
+      "status": 404,
+      "len": 114,
+      "content_type": "application/json; charset=UTF-8",
+      "body_snippet": "{\"code\":\"rest_no_route\",\"message\":\"No route was found matching the URL and request method.\",\"data\":{\"status\":404}}"
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/elementor/v1/user-data",
+      "status": 404,
+      "len": 114,
+      "content_type": "application/json; charset=UTF-8",
+      "body_snippet": "{\"code\":\"rest_no_route\",\"message\":\"No route was found matching the URL and request method.\",\"data\":{\"status\":404}}"
+    },
+    {
+      "method": "POST",
+      "path": "/wp-admin/admin-ajax.php",
+      "status": 400,
+      "len": 1,
+      "content_type": "text/html; charset=UTF-8",
+      "body_snippet": "0"
+    },
+    {
+      "method": "POST",
+      "path": "/wp-admin/admin-ajax.php",
+      "status": 400,
+      "len": 1,
+      "content_type": "text/html; charset=UTF-8",
+      "body_snippet": "0"
+    },
+    {
+      "method": "POST",
+      "path": "/wp-admin/admin-ajax.php",
+      "status": 400,
+      "len": 1,
+      "content_type": "text/html; charset=UTF-8",
+      "body_snippet": "0"
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/elementor/readme.txt",
+      "status": 200,
+      "len": 31090,
+      "content_type": "text/plain",
+      "version": "3.25.10"
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/elementor-pro/readme.txt",
+      "status": 200,
+      "len": 337,
+      "content_type": "text/plain"
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/elementor/changelog.txt",
+      "status": 200,
+      "len": 307303,
+      "content_type": "text/plain"
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/uploads/elementor/css/post-1.css",
+      "status": 404,
+      "len": 346106,
+      "content_type": "text/html; charset=UTF-8",
+      "body_snippet": "<!DOCTYPE html>\n<html lang=\"en-US\">\n<head>\n\t<meta charset=\"UTF-8\">\n\t\t<title>Page not found &#8211; Supreme Court of the Philippines</title>\n<meta name='robots' content='max-image-preview:large' />\n<li"
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/uploads/elementor/css/",
+      "status": 403,
+      "len": 285,
+      "content_type": "text/html; charset=iso-8859-1",
+      "body_snippet": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n<p>You don't have permission to access this resource.</p>\n<hr>\n<address>Ap"
+    }
+  ],
+  "plugin_surface": [
+    {
+      "path": "/wp-content/plugins/duplicate-page/readme.txt",
+      "status": 200,
+      "len": 5845,
+      "version": "4.5.7"
+    },
+    {
+      "path": "/wp-content/plugins/redirection/readme.txt",
+      "status": 200,
+      "len": 13510,
+      "version": "5.7.5"
+    },
+    {
+      "path": "/wp-content/plugins/elementor/elementor.php",
+      "status": 200,
+      "len": 0
+    },
+    {
+      "path": "/wp-content/backups-dup-lite/",
+      "status": 200,
+      "len": 0
+    },
+    {
+      "path": "/wp-content/advanced-cache.php",
+      "status": 200,
+      "len": 0
+    },
+    {
+      "path": "/wp-content/themes/twentytwentyfour/style.css",
+      "status": 200,
+      "len": 1201,
+      "version": "1.1"
+    },
+    {
+      "path": "/wp-content/themes/twentytwentythree/style.css",
+      "status": 200,
+      "len": 1114,
+      "version": "1.4"
+    },
+    {
+      "path": "/wp-content/themes/twentytwentytwo/style.css",
+      "status": 200,
+      "len": 5987,
+      "version": "1.7"
+    },
+    {
+      "path": "/wp-content/themes/",
+      "status": 200,
+      "len": 0
+    }
+  ],
+  "waf_bypass_hits": [
+    {
+      "path": "/wp-admin/install.php",
+      "status": 200
+    },
+    {
+      "path": "/wp-admin/setup-config.php",
+      "status": 409
+    },
+    {
+      "path": "/wp-admin/upgrade.php",
+      "status": 200
+    },
+    {
+      "path": "/wp-admin/maint/repair.php",
+      "status": 200
+    }
+  ],
+  "credential_spray": {
+    "success": null,
+    "valid_users": {},
+    "attempts": 760,
+    "blocked": true
+  },
+  "rest_deep_enum": {
+    "/wp-json/wp/v2/users?per_page=100": {
+      "status": 200,
+      "len": 3129,
+      "count": 5,
+      "sample_keys": [
+        "id",
+        "name",
+        "url",
+        "description",
+        "link",
+        "slug",
+        "avatar_urls",
+        "meta",
+        "_links"
+      ]
+    },
+    "/wp-json/wp/v2/users?roles=administrator": {
+      "status": 401,
+      "len": 118
+    },
+    "/wp-json/wp/v2/users?who=authors": {
+      "status": 401,
+      "len": 124
+    },
+    "/wp-json/wp/v2/posts?per_page=1&status=draft": {
+      "status": 400,
+      "len": 244
+    },
+    "/wp-json/wp/v2/posts?per_page=1&status=private": {
+      "status": 400,
+      "len": 244
+    },
+    "/wp-json/wp/v2/media?per_page=5": {
+      "status": 200,
+      "len": 9256,
+      "count": 5,
+      "sample_keys": [
+        "id",
+        "date",
+        "date_gmt",
+        "guid",
+        "modified",
+        "modified_gmt",
+        "slug",
+        "status",
+        "type",
+        "link"
+      ]
+    },
+    "/wp-json/wp/v2/comments?per_page=5": {
+      "status": 200,
+      "len": 9184,
+      "count": 4,
+      "sample_keys": [
+        "id",
+        "post",
+        "parent",
+        "author",
+        "author_name",
+        "author_url",
+        "date",
+        "date_gmt",
+        "content",
+        "link"
+      ]
+    },
+    "/wp-json/wp/v2/plugins": {
+      "status": 401,
+      "len": 129
+    },
+    "/wp-json/wp/v2/block-types": {
+      "status": 401,
+      "len": 122
+    },
+    "/wp-json/oembed/1.0/proxy": {
+      "status": 400,
+      "len": 115
+    }
+  },
+  "author_leak": [
+    {
+      "id": 1,
+      "slug": "scweb",
+      "fields": [
+        "id",
+        "name",
+        "url",
+        "description",
+        "link",
+        "slug",
+        "avatar_urls",
+        "meta",
+        "_links"
+      ]
+    },
+    {
+      "id": 2,
+      "slug": "pio_tyke",
+      "fields": [
+        "id",
+        "name",
+        "url",
+        "description",
+        "link",
+        "slug",
+        "avatar_urls",
+        "meta",
+        "_links"
+      ]
+    },
+    {
+      "id": 16,
+      "slug": "pio_jerome",
+      "fields": [
+        "id",
+        "name",
+        "url",
+        "description",
+        "link",
+        "slug",
+        "avatar_urls",
+        "meta",
+        "_links"
+      ]
+    },
+    {
+      "id": 204,
+      "slug": "tyke-test-admin",
+      "fields": [
+        "id",
+        "name",
+        "url",
+        "description",
+        "link",
+        "slug",
+        "avatar_urls",
+        "meta",
+        "_links"
+      ]
+    },
+    {
+      "id": 205,
+      "slug": "pio_rus",
+      "fields": [
+        "id",
+        "name",
+        "url",
+        "description",
+        "link",
+        "slug",
+        "avatar_urls",
+        "meta",
+        "_links"
+      ]
+    }
+  ],
+  "password_reset": {
+    "scweb": "blocked",
+    "pio_tyke": "blocked",
+    "pio_jerome": "blocked",
+    "tyke-test-admin": "blocked",
+    "pio_rus": "blocked"
+  }
+}
