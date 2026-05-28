@@ -1,0 +1,307 @@
+{
+  "meta": {
+    "target": "https://sc.judiciary.gov.ph",
+    "phase": 3,
+    "mode": "aggressive",
+    "timestamp": "2026-05-28T06:29:43.113734+00:00",
+    "elapsed_sec": 668.3
+  },
+  "bypass_hits": [],
+  "brute_force": {
+    "success": null,
+    "valid_users": [],
+    "open_paths": [],
+    "blocked_paths": [],
+    "attempts": 12000
+  },
+  "backup_hits": [
+    {
+      "path": "/license.txt",
+      "status": 200,
+      "len": 19915,
+      "content_type": "text/plain"
+    }
+  ],
+  "plugin_exploits": [
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/wpdatatables/assets/js/wpdatatables/wdt.min.js",
+      "status": 404,
+      "len": 346106
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/wpdatatables/v1/get_table_data?table_id=1",
+      "status": 404,
+      "len": 114
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/wpdatatables/v1/get_table_data?table_id=1&table_type=mysql",
+      "status": 404,
+      "len": 114
+    },
+    {
+      "method": "POST",
+      "path": "/wp-admin/admin-ajax.php",
+      "status": 400,
+      "len": 1
+    },
+    {
+      "method": "POST",
+      "path": "/wp-admin/admin-ajax.php",
+      "status": 400,
+      "len": 1
+    },
+    {
+      "method": "POST",
+      "path": "/wp-admin/admin-ajax.php",
+      "status": 400,
+      "len": 1
+    },
+    {
+      "method": "POST",
+      "path": "/wp-admin/admin-ajax.php",
+      "status": 400,
+      "len": 1
+    },
+    {
+      "method": "POST",
+      "path": "/wp-admin/admin-ajax.php",
+      "status": 400,
+      "len": 1
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/ht-mega-for-elementor/readme.txt",
+      "status": 200,
+      "len": 91281,
+      "version": "2.7.6"
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/wpdatatables/readme.txt",
+      "status": 404,
+      "len": 346106
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/essential-addons-for-elementor-lite/readme.txt",
+      "status": 404,
+      "len": 346106
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/powerpack-lite-for-elementor/readme.txt",
+      "status": 404,
+      "len": 346106
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/royal-elementor-addons/readme.txt",
+      "status": 404,
+      "len": 346106
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/header-footer-elementor/readme.txt",
+      "status": 404,
+      "len": 346106
+    },
+    {
+      "method": "POST",
+      "path": "/wp-admin/admin-ajax.php",
+      "status": 403,
+      "len": 919
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/backups-dup-lite/",
+      "status": 200,
+      "len": 0,
+      "snippet": ""
+    },
+    {
+      "method": "GET",
+      "path": "/wp-content/backups-dup-lite/index.php",
+      "status": 200,
+      "len": 0,
+      "snippet": ""
+    },
+    {
+      "method": "GET",
+      "path": "/installer.php",
+      "status": 404,
+      "len": 344054
+    },
+    {
+      "method": "GET",
+      "path": "/dup-installer/main.installer.php",
+      "status": 404,
+      "len": 344054
+    },
+    {
+      "method": "POST",
+      "path": "/xmlrpc.php",
+      "status": 403,
+      "len": 919
+    },
+    {
+      "method": "GET",
+      "path": "/?author=1",
+      "status": 301,
+      "len": 0
+    },
+    {
+      "method": "GET",
+      "path": "/?author=2",
+      "status": 301,
+      "len": 0
+    },
+    {
+      "method": "GET",
+      "path": "/?author=204",
+      "status": 301,
+      "len": 0
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/wp/v2/users/1?_fields=id,slug,name,email",
+      "status": 200,
+      "len": 38,
+      "json": {
+        "id": 1,
+        "name": "scweb",
+        "slug": "scweb"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/wp/v2/users?_fields=id,slug,name,email&per_page=100",
+      "status": 200,
+      "len": 240,
+      "json": [
+        {
+          "id": 16,
+          "name": "pio jerome",
+          "slug": "pio_jerome"
+        },
+        {
+          "id": 205,
+          "name": "Rus Narito",
+          "slug": "pio_rus"
+        },
+        {
+          "id": 1,
+          "name": "scweb",
+          "slug": "scweb"
+        },
+        {
+          "id": 204,
+          "name": "tyke Flores",
+          "slug": "tyke-test-admin"
+        },
+        {
+          "id": 2,
+          "name": "tyke pio",
+          "slug": "pio_tyke"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/wp/v2/posts?per_page=1&_fields=id,title,content",
+      "status": 200,
+      "len": 12935,
+      "json": [
+        {
+          "id": 166826,
+          "title": {
+            "rendered": "SCC-26-007-P Office of the Court Administrator Vs. Al Jamel E. Barataman, Clerk of Court II, Shari\u00e1h Circuit Court, Marawi City-Saguiaran-Kapai-Tagaloan II-Piagapo, Lanao del Sur"
+          },
+          "content": {
+            "rendered": "\t\t<div data-elementor-type=\"wp-post\" data-elementor-id=\"166826\" class=\"elementor elementor-166826\" data-elementor-post-type=\"post\">\n\t\t\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-0aefc02 elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"0aefc02\" data-element_type=\"section\" data-settings=\"{&quot;background_background&quot;:&quot;slideshow&quot;,&quot;background_slideshow_gallery&quot;:[{&quot;id&quot;:2045,&quot;url&quot;:&quot;https:\\/\\/sc.judiciary.gov.ph\\/wp-content\\/uploads\\/2022\\/03\\/Banner-CentBldg.png&quot;}],&quot;background_slideshow_loop&quot;:&quot;yes&quot;,&quot;background_slideshow_slide_duration&quot;:5000,&quot;background_slideshow_slide_transition&quot;:&quot;fade&quot;,&quot;background_slideshow_transition_duration&quot;:500}\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-5c996da\" data-id=\"5c996da\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-46cbaff elementor-widget elementor-widget-spacer\" data-id=\"46cbaff\" data-element_type=\"widget\" data-widget_type=\"spacer.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t<div class=\"elementor-spacer\">\n\t\t\t<div class=\"elementor-spacer-inner\"></div>\n\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-23b9e84 elementor-widget elementor-widget-heading\" data-id=\"23b9e84\" data-element_type=\"widget\" data-widget_type=\"heading.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t<h2 class=\"elementor-heading-title elementor-size-default\">Office of the Court Administrator Vs. Al Jamel E. Barataman, Clerk of Court II, Shari\u00e1h Circuit Court, Marawi City-Saguiaran-Kapai-Tagaloan II-Piagapo, Lanao del Sur</h2>\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-2d555bc elementor-widget elementor-widget-spacer\" data-id=\"2d555bc\" data-element_type=\"widget\" data-widget_type=\"spacer.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t<div class=\"elementor-spacer\">\n\t\t\t<div class=\"elementor-spacer-inner\"></div>\n\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-04ac298 elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"04ac298\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-bc1491a\" data-id=\"bc1491a\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap\">\n\t\t\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-092591a elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"092591a\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-50 elementor-top-column elementor-element elementor-element-d5e0771\" data-id=\"d5e0771\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-5a32154 elementor-widget elementor-widget-text-editor\" data-id=\"5a32154\" data-element_type=\"widget\" data-widget_type=\"text-editor.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<p>A.M. No. SCC-26-007-P. February 4, 2026 [Date Uploaded: 05/28/2026]</p>\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-28e8ddc elementor-widget elementor-widget-text-editor\" data-id=\"28e8ddc\" data-element_type=\"widget\" data-widget_type=\"text-editor.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<a href=\"https://sc.judiciary.gov.ph/wp-content/uploads/2026/05/SCC-26-007-P.pdf\" class=\"pdfemb-viewer\" style=\"\" data-width=\"max\" data-height=\"max\" data-toolbar=\"top\" data-toolbar-fixed=\"on\">SCC-26-007-P</a>\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t<div class=\"elementor-column elementor-col-50 elementor-top-column elementor-element elementor-element-8186cb2\" data-id=\"8186cb2\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-e1c074c elementor-widget elementor-widget-button\" data-id=\"e1c074c\" data-element_type=\"widget\" data-widget_type=\"button.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<div class=\"elementor-button-wrapper\">\n\t\t\t\t\t<a class=\"elementor-button elementor-button-link elementor-size-sm\" href=\"https://sc.judiciary.gov.ph/wp-content/uploads/2026/05/SCC-26-007-P.pdf\" target=\"_blank\">\n\t\t\t\t\t\t<span class=\"elementor-button-content-wrapper\">\n\t\t\t\t\t\t\t\t\t<span class=\"elementor-button-text\">DOWNLOAD PDF FILE HERE</span>\n\t\t\t\t\t</span>\n\t\t\t\t\t</a>\n\t\t\t\t</div>\n\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-1ef60e5 elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"1ef60e5\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-69ed03b\" data-id=\"69ed03b\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-6303262 elementor-widget elementor-widget-spacer\" data-id=\"6303262\" data-element_type=\"widget\" data-widget_type=\"spacer.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t<div class=\"elementor-spacer\">\n\t\t\t<div class=\"elementor-spacer-inner\"></div>\n\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-7e4f174 elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"7e4f174\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-06c6b12\" data-id=\"06c6b12\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-78342e8 elementor-widget elementor-widget-text-editor\" data-id=\"78342e8\" data-element_type=\"widget\" data-widget_type=\"text-editor.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t\t\t<div data-elementor-type=\"page\" data-elementor-id=\"2173\" class=\"elementor elementor-2173\" data-elementor-post-type=\"elementor_library\">\n\t\t\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-7b14051 elementor-section-boxed elementor-section-height-default elementor-section-height-default elementor-invisible\" data-id=\"7b14051\" data-element_type=\"section\" data-settings=\"{&quot;background_background&quot;:&quot;classic&quot;,&quot;animation&quot;:&quot;fadeInDown&quot;}\">\n\t\t\t\t\t\t\t<div class=\"elementor-background-overlay\"></div>\n\t\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-6ee17ff\" data-id=\"6ee17ff\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<section class=\"elementor-section elementor-inner-section elementor-element elementor-element-9ed7c35 elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"9ed7c35\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-inner-column elementor-element elementor-element-33c4858\" data-id=\"33c4858\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-ae6a088 elementor-widget elementor-widget-heading\" data-id=\"ae6a088\" data-element_type=\"widget\" data-widget_type=\"heading.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t<h2 class=\"elementor-heading-title elementor-size-default\">Email Us</h2>\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-8ad4eb9 elementor-widget elementor-widget-text-editor\" data-id=\"8ad4eb9\" data-element_type=\"widget\" data-widget_type=\"text-editor.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<p style=\"text-align: center;\">Please include your name, contact number, email address, and the subject in your email.</p>\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-2d49505 elementor-widget elementor-widget-text-editor\" data-id=\"2d49505\" data-element_type=\"widget\" data-widget_type=\"text-editor.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<p style=\"text-align: center;\"><em>Please read our <span style=\"text-decoration: underline;\"><a href=\"https://sc.judiciary.gov.ph/privacy-statement-email/\" target=\"_blank\" rel=\"noopener\">Privacy Notice</a></span> for the terms on the collection of your personal information.</em></p>\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-eed4cda elementor-align-center elementor-widget elementor-widget-button\" data-id=\"eed4cda\" data-element_type=\"widget\" data-widget_type=\"button.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<div class=\"elementor-button-wrapper\">\n\t\t\t\t\t<a class=\"elementor-button elementor-button-link elementor-size-sm\" href=\"mailto:chiefjusticehelpdesk@judiciary.gov.ph\">\n\t\t\t\t\t\t<span class=\"elementor-button-content-wrapper\">\n\t\t\t\t\t\t\t\t\t<span class=\"elementor-button-text\">CLICK HERE</span>\n\t\t\t\t\t</span>\n\t\t\t\t\t</a>\n\t\t\t\t</div>\n\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t</div>\n\t\t\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-17444fe elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"17444fe\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-cafae02\" data-id=\"cafae02\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-a616e42 elementor-widget elementor-widget-spacer\" data-id=\"a616e42\" data-element_type=\"widget\" data-widget_type=\"spacer.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t<div class=\"elementor-spacer\">\n\t\t\t<div class=\"elementor-spacer-inner\"></div>\n\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t</div>\n\t\t",
+            "protected": false
+          }
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/batch/v1",
+      "status": 404,
+      "len": 114
+    }
+  ],
+  "plugin_interesting": [
+    {
+      "method": "GET",
+      "path": "/wp-content/plugins/ht-mega-for-elementor/readme.txt",
+      "status": 200,
+      "len": 91281,
+      "version": "2.7.6"
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/wp/v2/users/1?_fields=id,slug,name,email",
+      "status": 200,
+      "len": 38,
+      "json": {
+        "id": 1,
+        "name": "scweb",
+        "slug": "scweb"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/wp/v2/users?_fields=id,slug,name,email&per_page=100",
+      "status": 200,
+      "len": 240,
+      "json": [
+        {
+          "id": 16,
+          "name": "pio jerome",
+          "slug": "pio_jerome"
+        },
+        {
+          "id": 205,
+          "name": "Rus Narito",
+          "slug": "pio_rus"
+        },
+        {
+          "id": 1,
+          "name": "scweb",
+          "slug": "scweb"
+        },
+        {
+          "id": 204,
+          "name": "tyke Flores",
+          "slug": "tyke-test-admin"
+        },
+        {
+          "id": 2,
+          "name": "tyke pio",
+          "slug": "pio_tyke"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/wp-json/wp/v2/posts?per_page=1&_fields=id,title,content",
+      "status": 200,
+      "len": 12935,
+      "json": [
+        {
+          "id": 166826,
+          "title": {
+            "rendered": "SCC-26-007-P Office of the Court Administrator Vs. Al Jamel E. Barataman, Clerk of Court II, Shari\u00e1h Circuit Court, Marawi City-Saguiaran-Kapai-Tagaloan II-Piagapo, Lanao del Sur"
+          },
+          "content": {
+            "rendered": "\t\t<div data-elementor-type=\"wp-post\" data-elementor-id=\"166826\" class=\"elementor elementor-166826\" data-elementor-post-type=\"post\">\n\t\t\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-0aefc02 elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"0aefc02\" data-element_type=\"section\" data-settings=\"{&quot;background_background&quot;:&quot;slideshow&quot;,&quot;background_slideshow_gallery&quot;:[{&quot;id&quot;:2045,&quot;url&quot;:&quot;https:\\/\\/sc.judiciary.gov.ph\\/wp-content\\/uploads\\/2022\\/03\\/Banner-CentBldg.png&quot;}],&quot;background_slideshow_loop&quot;:&quot;yes&quot;,&quot;background_slideshow_slide_duration&quot;:5000,&quot;background_slideshow_slide_transition&quot;:&quot;fade&quot;,&quot;background_slideshow_transition_duration&quot;:500}\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-5c996da\" data-id=\"5c996da\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-46cbaff elementor-widget elementor-widget-spacer\" data-id=\"46cbaff\" data-element_type=\"widget\" data-widget_type=\"spacer.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t<div class=\"elementor-spacer\">\n\t\t\t<div class=\"elementor-spacer-inner\"></div>\n\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-23b9e84 elementor-widget elementor-widget-heading\" data-id=\"23b9e84\" data-element_type=\"widget\" data-widget_type=\"heading.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t<h2 class=\"elementor-heading-title elementor-size-default\">Office of the Court Administrator Vs. Al Jamel E. Barataman, Clerk of Court II, Shari\u00e1h Circuit Court, Marawi City-Saguiaran-Kapai-Tagaloan II-Piagapo, Lanao del Sur</h2>\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-2d555bc elementor-widget elementor-widget-spacer\" data-id=\"2d555bc\" data-element_type=\"widget\" data-widget_type=\"spacer.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t<div class=\"elementor-spacer\">\n\t\t\t<div class=\"elementor-spacer-inner\"></div>\n\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-04ac298 elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"04ac298\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-bc1491a\" data-id=\"bc1491a\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap\">\n\t\t\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-092591a elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"092591a\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-50 elementor-top-column elementor-element elementor-element-d5e0771\" data-id=\"d5e0771\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-5a32154 elementor-widget elementor-widget-text-editor\" data-id=\"5a32154\" data-element_type=\"widget\" data-widget_type=\"text-editor.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<p>A.M. No. SCC-26-007-P. February 4, 2026 [Date Uploaded: 05/28/2026]</p>\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-28e8ddc elementor-widget elementor-widget-text-editor\" data-id=\"28e8ddc\" data-element_type=\"widget\" data-widget_type=\"text-editor.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<a href=\"https://sc.judiciary.gov.ph/wp-content/uploads/2026/05/SCC-26-007-P.pdf\" class=\"pdfemb-viewer\" style=\"\" data-width=\"max\" data-height=\"max\" data-toolbar=\"top\" data-toolbar-fixed=\"on\">SCC-26-007-P</a>\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t<div class=\"elementor-column elementor-col-50 elementor-top-column elementor-element elementor-element-8186cb2\" data-id=\"8186cb2\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-e1c074c elementor-widget elementor-widget-button\" data-id=\"e1c074c\" data-element_type=\"widget\" data-widget_type=\"button.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<div class=\"elementor-button-wrapper\">\n\t\t\t\t\t<a class=\"elementor-button elementor-button-link elementor-size-sm\" href=\"https://sc.judiciary.gov.ph/wp-content/uploads/2026/05/SCC-26-007-P.pdf\" target=\"_blank\">\n\t\t\t\t\t\t<span class=\"elementor-button-content-wrapper\">\n\t\t\t\t\t\t\t\t\t<span class=\"elementor-button-text\">DOWNLOAD PDF FILE HERE</span>\n\t\t\t\t\t</span>\n\t\t\t\t\t</a>\n\t\t\t\t</div>\n\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-1ef60e5 elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"1ef60e5\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-69ed03b\" data-id=\"69ed03b\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-6303262 elementor-widget elementor-widget-spacer\" data-id=\"6303262\" data-element_type=\"widget\" data-widget_type=\"spacer.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t<div class=\"elementor-spacer\">\n\t\t\t<div class=\"elementor-spacer-inner\"></div>\n\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-7e4f174 elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"7e4f174\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-06c6b12\" data-id=\"06c6b12\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-78342e8 elementor-widget elementor-widget-text-editor\" data-id=\"78342e8\" data-element_type=\"widget\" data-widget_type=\"text-editor.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t\t\t<div data-elementor-type=\"page\" data-elementor-id=\"2173\" class=\"elementor elementor-2173\" data-elementor-post-type=\"elementor_library\">\n\t\t\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-7b14051 elementor-section-boxed elementor-section-height-default elementor-section-height-default elementor-invisible\" data-id=\"7b14051\" data-element_type=\"section\" data-settings=\"{&quot;background_background&quot;:&quot;classic&quot;,&quot;animation&quot;:&quot;fadeInDown&quot;}\">\n\t\t\t\t\t\t\t<div class=\"elementor-background-overlay\"></div>\n\t\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-6ee17ff\" data-id=\"6ee17ff\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<section class=\"elementor-section elementor-inner-section elementor-element elementor-element-9ed7c35 elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"9ed7c35\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-inner-column elementor-element elementor-element-33c4858\" data-id=\"33c4858\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-ae6a088 elementor-widget elementor-widget-heading\" data-id=\"ae6a088\" data-element_type=\"widget\" data-widget_type=\"heading.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t<h2 class=\"elementor-heading-title elementor-size-default\">Email Us</h2>\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-8ad4eb9 elementor-widget elementor-widget-text-editor\" data-id=\"8ad4eb9\" data-element_type=\"widget\" data-widget_type=\"text-editor.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<p style=\"text-align: center;\">Please include your name, contact number, email address, and the subject in your email.</p>\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-2d49505 elementor-widget elementor-widget-text-editor\" data-id=\"2d49505\" data-element_type=\"widget\" data-widget_type=\"text-editor.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<p style=\"text-align: center;\"><em>Please read our <span style=\"text-decoration: underline;\"><a href=\"https://sc.judiciary.gov.ph/privacy-statement-email/\" target=\"_blank\" rel=\"noopener\">Privacy Notice</a></span> for the terms on the collection of your personal information.</em></p>\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t<div class=\"elementor-element elementor-element-eed4cda elementor-align-center elementor-widget elementor-widget-button\" data-id=\"eed4cda\" data-element_type=\"widget\" data-widget_type=\"button.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t\t\t<div class=\"elementor-button-wrapper\">\n\t\t\t\t\t<a class=\"elementor-button elementor-button-link elementor-size-sm\" href=\"mailto:chiefjusticehelpdesk@judiciary.gov.ph\">\n\t\t\t\t\t\t<span class=\"elementor-button-content-wrapper\">\n\t\t\t\t\t\t\t\t\t<span class=\"elementor-button-text\">CLICK HERE</span>\n\t\t\t\t\t</span>\n\t\t\t\t\t</a>\n\t\t\t\t</div>\n\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t</div>\n\t\t\t\t\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t<section class=\"elementor-section elementor-top-section elementor-element elementor-element-17444fe elementor-section-boxed elementor-section-height-default elementor-section-height-default\" data-id=\"17444fe\" data-element_type=\"section\">\n\t\t\t\t\t\t<div class=\"elementor-container elementor-column-gap-default\">\n\t\t\t\t\t<div class=\"elementor-column elementor-col-100 elementor-top-column elementor-element elementor-element-cafae02\" data-id=\"cafae02\" data-element_type=\"column\">\n\t\t\t<div class=\"elementor-widget-wrap elementor-element-populated\">\n\t\t\t\t\t\t<div class=\"elementor-element elementor-element-a616e42 elementor-widget elementor-widget-spacer\" data-id=\"a616e42\" data-element_type=\"widget\" data-widget_type=\"spacer.default\">\n\t\t\t\t<div class=\"elementor-widget-container\">\n\t\t\t\t\t<div class=\"elementor-spacer\">\n\t\t\t<div class=\"elementor-spacer-inner\"></div>\n\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t</div>\n\t\t\t\t\t</div>\n\t\t</div>\n\t\t\t\t\t</div>\n\t\t</section>\n\t\t\t\t</div>\n\t\t",
+            "protected": false
+          }
+        }
+      ]
+    }
+  ]
+}
