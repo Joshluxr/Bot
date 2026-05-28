@@ -70,3 +70,18 @@ Ten consecutive `POST` attempts to `/wp%2Dlogin.php` returned **HTTP 200** with 
 | pio_rus | Same |
 
 **Conclusion:** All five accounts are live on the bypassed login endpoint. None of the tested common passwords succeeded. Credential stuffing at scale remains practical due to absent rate limiting (use client-approved larger wordlist from engagement jump host if RoE allows).
+
+## 6. Top-50 password dictionary (user-provided list)
+
+**Wordlist:** `wordlists/user-provided-top56.txt` (50 passwords)  
+**Method:** `run_dictionary.sh` → `/wp%2Dlogin.php`, 6s delay, all five users
+
+| User | Attempts | Result |
+|------|----------|--------|
+| tyke-test-admin | 50 | No match — all **Invalid Password** |
+| scweb | 50 | No match |
+| pio_tyke | 50 | No match |
+| pio_jerome | 50 | No match |
+| pio_rus | 50 | No match |
+
+**Total:** 250 login attempts — **no valid credentials** in this list.
