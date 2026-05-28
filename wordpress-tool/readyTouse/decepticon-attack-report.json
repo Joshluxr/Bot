@@ -1,0 +1,180 @@
+{
+  "meta": {
+    "target": "https://lto.gov.ph",
+    "decepticon_ref": "PurpleAILAB/Decepticon@2be00f6",
+    "mode": "skill-playbook-runner (no Docker/LLM)",
+    "timestamp": "2026-05-28T12:19:50.302089+00:00"
+  },
+  "phases": {
+    "waf_detection": {
+      "headers": {
+        "server": "cloudflare",
+        "cf-ray": "a02d35bf8cf1d6cd-IAD"
+      },
+      "waf_indicators": [
+        "Cloudflare Bot Challenge (403)",
+        "CloudFront/CDN"
+      ],
+      "cloudflare_challenge": true,
+      "sqli_probe_status": 403,
+      "wafw00f": {
+        "cmd": "pip show wafw00f >/dev/null 2>&1 && wafw00f https://lto.gov.ph 2>&1 || echo wafw00f-not-installed",
+        "exit": 0,
+        "stdout": "wafw00f-not-installed\n",
+        "stderr": ""
+      }
+    },
+    "cms_wordpress": {
+      "checks": {
+        "wp_json_users": {
+          "status": 403,
+          "len": 5781,
+          "location": null
+        },
+        "wp_json": {
+          "status": 403,
+          "len": 5727,
+          "location": null
+        },
+        "xmlrpc": {
+          "status": 403,
+          "len": 5733,
+          "location": null
+        },
+        "readme": {
+          "status": 403,
+          "len": 5736,
+          "location": null
+        },
+        "login": {
+          "status": 403,
+          "len": 5739,
+          "location": null
+        },
+        "login_bypass": {
+          "status": 403,
+          "len": 5739,
+          "location": null
+        },
+        "author_1": {
+          "status": 403,
+          "len": 5730,
+          "location": null
+        },
+        "install_php": {
+          "status": 403,
+          "len": 5784,
+          "location": null
+        },
+        "upgrade_php": {
+          "status": 403,
+          "len": 5784,
+          "location": null
+        },
+        "repair_php": {
+          "status": 403,
+          "len": 5799,
+          "location": null
+        }
+      },
+      "users": [],
+      "plugins": []
+    },
+    "auth_mapping": [
+      {
+        "path": "/wp-login.php",
+        "status": 403,
+        "login_form": false
+      },
+      {
+        "path": "/wp%2Dlogin.php",
+        "status": 403,
+        "login_form": false
+      },
+      {
+        "path": "/login",
+        "status": 403,
+        "login_form": false
+      },
+      {
+        "path": "/admin",
+        "status": 403,
+        "login_form": false
+      },
+      {
+        "path": "/wp-admin/",
+        "status": 403,
+        "login_form": false
+      },
+      {
+        "path": "/wp-login.php?action=lostpassword",
+        "status": 403,
+        "login_form": false
+      },
+      {
+        "path": "/wp%2Dlogin.php?action=lostpassword",
+        "status": 403,
+        "login_form": false
+      },
+      {
+        "path": "/wp-login.php?action=register",
+        "status": 403,
+        "login_form": false
+      }
+    ],
+    "exploit_probes": {
+      "sqli": {
+        "status": 403,
+        "len": 5727,
+        "hit": false
+      },
+      "ssti": {
+        "status": 403,
+        "len": 5739,
+        "hit": true
+      },
+      "lfi": {
+        "status": 403,
+        "len": 5823,
+        "hit": false
+      },
+      "cmdi": {
+        "status": 403,
+        "len": 5733,
+        "hit": false
+      },
+      "graphql": {
+        "status": 403,
+        "len": 5831,
+        "hit": false
+      },
+      "wp_json_batch": {
+        "status": 403,
+        "len": 5772,
+        "hit": false
+      }
+    },
+    "httpx": {
+      "cmd": "echo \"https://lto.gov.ph\" | httpx -silent -status-code -title -tech-detect -follow-redirects -o readyTouse/decepticon/httpx_lto.gov.ph.txt 2>&1",
+      "exit": 0,
+      "stdout": "https://lto.gov.ph [\u001b[31m403\u001b[0m] [\u001b[36mJust a moment...\u001b[0m] [\u001b[35mCloudflare,HSTS\u001b[0m]\n",
+      "stderr": ""
+    },
+    "ffuf": {
+      "cmd": "ffuf -u \"https://lto.gov.ph/FUZZ\" -w /tmp/decepticon-dirs.txt -mc 200,301,302,403 -fc 404 -t 20 -timeout 10 -o readyTouse/decepticon/ffuf_lto.gov.ph.json -of json -s 2>&1",
+      "exit": 0,
+      "stdout": "wp-content\nreadme.html\nwp-login.php\nlogin\napi\nwp-admin\nbackup.zip\ndup-installer\ngraphql\nbackup\nuploads\nwp-json\nadmin\nwp-config.php.bak\nxmlrpc.php\nwp-includes\ninstaller.php\n.env\ndebug.log\n.git\nwp-cron.php\nauthor\nfeed\nwp-signup.php\nsitemap.xml\nphpinfo.php\nlicense.txt\n",
+      "stderr": ""
+    },
+    "nuclei": {
+      "cmd": "nuclei -u \"https://lto.gov.ph\" -tags wordpress,wp,exposure,misconfig,cve,tech -severity critical,high,medium -jsonl -o readyTouse/decepticon/nuclei_lto.gov.ph.jsonl -silent -timeout 10 -retries 1 2>&1",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "ato_spray": {
+      "skipped": true,
+      "reason": "set ATO_SPRAY=1 to enable"
+    }
+  }
+}
