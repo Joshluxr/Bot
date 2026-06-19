@@ -1,0 +1,151 @@
+{
+  "meta": {
+    "target": "https://sc.judiciary.gov.ph",
+    "assessment_date": "2026-05-28T02:21:29.289507+00:00",
+    "scope": "Authorized red team \u2014 read-only recon"
+  },
+  "findings": {
+    "AUTHZ-VULN-01": {
+      "title": "CloudFront WAF wp-login bypass",
+      "status": "REMEDIATED",
+      "detail": "Encoded login paths now return 403 alongside /wp-login.php. WAF appears to normalize or block encoded variants.",
+      "login_path_results": [
+        {
+          "path": "/wp-login.php",
+          "status": 403,
+          "location": null,
+          "login_page": false
+        },
+        {
+          "path": "/wp%2Dlogin.php",
+          "status": 403,
+          "location": null,
+          "login_page": false
+        },
+        {
+          "path": "/wp%2dlogin.php",
+          "status": 403,
+          "location": null,
+          "login_page": false
+        },
+        {
+          "path": "/wp%2Dlogin%2ephp",
+          "status": 403,
+          "location": null,
+          "login_page": false
+        },
+        {
+          "path": "/%77p-login.php",
+          "status": 403,
+          "location": null,
+          "login_page": false
+        }
+      ]
+    },
+    "AUTHZ-VULN-02": {
+      "title": "WordPress REST API user enumeration",
+      "status": "VULNERABLE",
+      "rest_api": {
+        "url": "https://sc.judiciary.gov.ph/wp-json/wp/v2/users",
+        "status": 200,
+        "users": [
+          {
+            "id": 16,
+            "slug": "pio_jerome",
+            "name": "pio jerome",
+            "link": "https://sc.judiciary.gov.ph/author/pio_jerome/"
+          },
+          {
+            "id": 205,
+            "slug": "pio_rus",
+            "name": "Rus Narito",
+            "link": "https://sc.judiciary.gov.ph/author/pio_rus/"
+          },
+          {
+            "id": 1,
+            "slug": "scweb",
+            "name": "scweb",
+            "link": "https://sc.judiciary.gov.ph/author/scweb/"
+          },
+          {
+            "id": 204,
+            "slug": "tyke-test-admin",
+            "name": "tyke Flores",
+            "link": "https://sc.judiciary.gov.ph/author/tyke-test-admin/"
+          },
+          {
+            "id": 2,
+            "slug": "pio_tyke",
+            "name": "tyke pio",
+            "link": "https://sc.judiciary.gov.ph/author/pio_tyke/"
+          }
+        ]
+      }
+    },
+    "AUTHZ-VULN-03": {
+      "title": "Author archive user disclosure",
+      "status": "VULNERABLE",
+      "author_redirects": [
+        {
+          "author_id": 1,
+          "status": 301,
+          "location": "https://sc.judiciary.gov.ph/author/scweb/"
+        },
+        {
+          "author_id": 2,
+          "status": 301,
+          "location": "https://sc.judiciary.gov.ph/author/pio_tyke/"
+        },
+        {
+          "author_id": 16,
+          "status": 301,
+          "location": "https://sc.judiciary.gov.ph/author/pio_jerome/"
+        },
+        {
+          "author_id": 204,
+          "status": 301,
+          "location": "https://sc.judiciary.gov.ph/author/tyke-test-admin/"
+        },
+        {
+          "author_id": 205,
+          "status": 301,
+          "location": "https://sc.judiciary.gov.ph/author/pio_rus/"
+        }
+      ]
+    },
+    "INFO-01": {
+      "title": "XML-RPC status",
+      "xmlrpc": {
+        "status": 403,
+        "blocked": true
+      }
+    },
+    "INFO-02": {
+      "title": "Login rate limiting (blocked surface)",
+      "rate_limit": {
+        "attempts": 5,
+        "status_codes": [
+          403,
+          403,
+          403,
+          403,
+          403
+        ],
+        "login_reachable": false,
+        "rate_limiting_detected": false
+      }
+    }
+  },
+  "confirmed_users": [
+    "scweb",
+    "pio_tyke",
+    "pio_jerome",
+    "tyke-test-admin",
+    "pio_rus"
+  ],
+  "infrastructure": {
+    "cdn": "CloudFront",
+    "origin": "Apache/2.4.58 (Ubuntu)",
+    "elb": "awselb/2.0"
+  }
+}

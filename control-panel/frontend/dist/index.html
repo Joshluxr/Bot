@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Red Team Control Panel</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <!-- Login -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="logo">⚡</div>
+        <h1>Red Team Control Panel</h1>
+        <p>Authorized offensive security operations dashboard</p>
+      </div>
+      <div id="login-error" class="error-msg hidden"></div>
+      <form id="login-form">
+        <div class="form-group">
+          <label for="login-user">Username</label>
+          <input id="login-user" type="text" autocomplete="username" required placeholder="admin" />
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input id="login-pass" type="password" autocomplete="current-password" required placeholder="••••••••" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+      </form>
+      <p style="margin-top:1.25rem;font-size:0.75rem;color:var(--text-dim);text-align:center">
+        Settings and job control require <strong style="color:var(--warning)">admin</strong> role.
+        Change default credentials via <code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code>.
+      </p>
+    </div>
+  </div>
+
+  <!-- App -->
+  <div id="app-shell" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="icon">⚡</div>
+        <span id="app-title">Control Panel</span>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-page="dashboard">📊 Dashboard</button>
+        <button class="nav-item" data-page="jobs">🔄 Jobs <span id="running-badge" class="badge hidden">0</span></button>
+        <button class="nav-item" data-page="tools">🛠 Tools</button>
+        <button class="nav-item" data-page="engagements">🎯 Engagements</button>
+        <button class="nav-item" data-page="settings">⚙️ Settings <span class="admin-lock">Admin</span></button>
+        <button class="nav-item" data-page="audit" data-admin-only>📋 Audit Log</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <div class="user-avatar" id="user-avatar">A</div>
+          <div class="meta">
+            <div class="name" id="user-name">admin</div>
+            <div class="role" id="user-role">admin</div>
+          </div>
+        </div>
+        <button id="logout-btn" class="btn btn-ghost btn-block btn-sm">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- Dashboard -->
+      <section id="page-dashboard" class="page">
+        <header class="page-header">
+          <div>
+            <h2>Dashboard</h2>
+            <p>Real-time overview of offensive tooling and job health</p>
+          </div>
+          <div class="header-actions">
+            <span class="live-dot">Live monitoring</span>
+          </div>
+        </header>
+        <div class="stats-grid">
+          <div class="stat-card accent"><div class="stat-label">Total Jobs</div><div class="stat-value" id="stat-total">0</div></div>
+          <div class="stat-card warning"><div class="stat-label">Running</div><div class="stat-value" id="stat-running">0</div></div>
+          <div class="stat-card"><div class="stat-label">Queued</div><div class="stat-value" id="stat-queued">0</div></div>
+          <div class="stat-card success"><div class="stat-label">Succeeded</div><div class="stat-value" id="stat-success">0</div></div>
+          <div class="stat-card danger"><div class="stat-label">Failed</div><div class="stat-value" id="stat-failed">0</div></div>
+          <div class="stat-card accent"><div class="stat-label">Engagements</div><div class="stat-value" id="stat-engagements">0</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><h3>Recent Jobs</h3></div>
+          <div class="panel-body table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Name</th><th>Tool</th><th>Status</th><th>Created</th></tr></thead>
+              <tbody id="recent-jobs-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Jobs -->
+      <section id="page-jobs" class="page hidden">
+        <header class="page-header">
+          <div>
+            <h2>Job Monitor</h2>
+            <p>Launch, track, and inspect live output from all tools</p>
+          </div>
+        </header>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><h3>All Jobs</h3></div>
+            <div class="panel-body table-wrap" style="padding:0">
+              <table>
+                <thead><tr><th>ID</th><th>Name</th><th>Tool</th><th>Target</th><th>Status</th><th>PID</th><th>Created</th><th></th></tr></thead>
+                <tbody id="jobs-body"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><h3 id="log-title">Job Output</h3></div>
+            <div class="panel-body">
+              <pre id="job-log" class="log-viewer empty">Select a job to view live logs…</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tools -->
+      <section id="page-tools" class="page hidden">
+        <header class="page-header">
+          <div>
+            <h2>Attack Tools</h2>
+            <p>Launch wordpress-tool and Decepticon playbooks from the panel</p>
+          </div>
+        </header>
+        <input type="hidden" id="launch-default-target" />
+        <div id="tools-grid" class="tools-grid"></div>
+      </section>
+
+      <!-- Settings -->
+      <section id="page-settings" class="page hidden">
+        <header class="page-header">
+          <div>
+            <h2>Settings</h2>
+            <p>Global configuration — editable by administrators only</p>
+          </div>
+          <div class="header-actions" data-admin-only>
+            <button id="save-all-settings" class="btn btn-primary">Save All</button>
+          </div>
+        </header>
+        <div id="settings-grid" class="settings-grid"></div>
+      </section>
+
+      <!-- Engagements -->
+      <section id="page-engagements" class="page hidden">
+        <header class="page-header">
+          <div>
+            <h2>Engagements</h2>
+            <p>Authorized targets and scope tracking</p>
+          </div>
+          <div class="header-actions" data-admin-only>
+            <button id="new-engagement-btn" class="btn btn-primary">+ New Engagement</button>
+          </div>
+        </header>
+        <div class="panel">
+          <div class="panel-body table-wrap" style="padding:0">
+            <table>
+              <thead><tr><th>Name</th><th>Target URL</th><th>Notes</th><th>Status</th><th>Created</th><th></th></tr></thead>
+              <tbody id="engagements-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Audit -->
+      <section id="page-audit" class="page hidden" data-admin-only>
+        <header class="page-header">
+          <div>
+            <h2>Audit Log</h2>
+            <p>Admin actions and security events</p>
+          </div>
+        </header>
+        <div class="panel">
+          <div class="panel-body table-wrap" style="padding:0">
+            <table>
+              <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>Details</th></tr></thead>
+              <tbody id="audit-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Launch modal -->
+  <div id="launch-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="launch-modal-title">Launch Tool</h3>
+        <button class="close-btn" type="button" onclick="closeLaunchModal()">×</button>
+      </div>
+      <form id="launch-form">
+        <div class="modal-body">
+          <input type="hidden" id="launch-tool-id" />
+          <div class="form-group">
+            <label>Job name (optional)</label>
+            <input id="launch-name" type="text" placeholder="Custom job label" />
+          </div>
+          <div class="form-group">
+            <label>Target URL</label>
+            <input id="launch-target" type="url" placeholder="https://example.gov.ph" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeLaunchModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Start Job</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Engagement modal -->
+  <div id="engagement-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>New Engagement</h3>
+        <button class="close-btn" type="button" onclick="closeEngagementModal()">×</button>
+      </div>
+      <form id="engagement-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Name</label>
+            <input id="eng-name" required placeholder="lto-gov-ph" />
+          </div>
+          <div class="form-group">
+            <label>Target URL</label>
+            <input id="eng-url" type="url" required placeholder="https://lto.gov.ph" />
+          </div>
+          <div class="form-group">
+            <label>Notes</label>
+            <textarea id="eng-notes" placeholder="Scope, authorization ref, contacts…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeEngagementModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>
