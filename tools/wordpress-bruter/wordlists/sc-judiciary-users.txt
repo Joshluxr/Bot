@@ -1,0 +1,6 @@
+# Users confirmed via REST API + login enumeration (authorized engagement)
+scweb
+pio_tyke
+pio_jerome
+tyke-test-admin
+pio_rus

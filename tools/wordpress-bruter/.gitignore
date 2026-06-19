@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+vendor/extracted/
+vendor/tool.zip
+vendor/Wordpress-Bruter-And-Upload-Shell/
