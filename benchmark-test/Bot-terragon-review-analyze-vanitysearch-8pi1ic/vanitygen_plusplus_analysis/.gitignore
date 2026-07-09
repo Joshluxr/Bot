@@ -1,0 +1,10 @@
+*.oclbin
+*.o
+vanitygen
+oclvanitygen
+oclvanityminer
+keyconv
+results.txt
+oclvanitygen++
+vanitygen++
+run_tests
